@@ -29,7 +29,7 @@ a.btn{display:block;text-decoration:none;text-align:center}.lbl{font-size:11px;l
 .pv{font-size:13px;margin-top:6px;color:var(--mut)}.pv b{color:var(--ink)}.pv .k{color:var(--bad)}
 .opt{display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid var(--line);border-radius:10px;margin-top:6px;font-size:14px}
 </style></head><body>
-<header><div class="tile"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5v14M3 15h18v4M11 15v-4.5h6.5A3.5 3.5 0 0 1 21 14v1"/><rect x="5.2" y="11" width="4.4" height="3" rx="1.2"/></svg></div><div><small>PRODUKSI · QR v4</small><b>Scan KC</b></div><span class="sp"></span><span id="who"></span></header>
+<header><div class="tile"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5v14M3 15h18v4M11 15v-4.5h6.5A3.5 3.5 0 0 1 21 14v1"/><rect x="5.2" y="11" width="4.4" height="3" rx="1.2"/></svg></div><div><small>PRODUKSI · QR v5</small><b>Scan KC</b></div><span class="sp"></span><span id="who"></span></header>
 <main id="main"></main>
 <div id="ov"><div class="sheet" id="sh"></div></div>
 <script>
@@ -37,7 +37,8 @@ a.btn{display:block;text-decoration:none;text-align:center}.lbl{font-size:11px;l
  * scan.html  -  halaman scanner kamera (statis, di-hosting di luar Apps Script)
  * KENAPA     : iframe Apps Script memblokir kamera ("Permission denied"). Halaman ini berdiri sendiri (HTTPS top-level),
  *              membuka kamera sendiri, lalu memanggil Web App Produksi lewat fetch (doPost) dengan token sesi.
- * MODE       : Cutting (scan label KC satu-satu) & Penjahit (scan Surat Jalan ke keranjang: terima / selesai jahit per komponen).
+ * MODE       : Cutting (scan label KC satu-satu), Penjahit (keranjang Surat Jalan: terima / selesai jahit per komponen),
+ *              Driver (keranjang Surat Jalan: ambil untuk diantar / jemput hasil jahit, + daftar job).
  * ALUR       : Produksi (layar Scan) -> "Scan dengan kamera" -> tiket sekali pakai di #hash -> halaman ini menukar tiket
  *              jadi token sesi (disimpan di browser, 12 jam) -> kamera membaca barcode Code128 KC -> cek -> konfirmasi -> selesai.
  * PEMBACA    : QR (utama, label berisi link ?kc=KC-...) + Code128 (label lama). Pembaca buatan sendiri tanpa pustaka luar;
@@ -449,6 +450,7 @@ function modes_() {
   var r = (ST && ST.roles) || [], adm = r.indexOf('ADMIN') >= 0, m = [];
   if (adm || r.indexOf('WORKER') >= 0 || !r.length) m.push('cut');
   if (adm || ['PACKING', 'ADMPROD', 'JAHIT'].some(function (x) { return r.indexOf(x) >= 0; })) m.push('jht');
+  if (adm || r.indexOf('DRIVER') >= 0) m.push('drv');
   return m.length ? m : ['cut'];
 }
 function playV_(v) { try { var pr = v.play(); if (pr && pr.catch) pr.catch(function () {}); } catch (e) {} }
@@ -456,17 +458,17 @@ function setMode(m) { MODE = m; try { localStorage.setItem(MKEY, m); } catch (e)
 function mulai() {
   var ms = modes_(), sv = ''; try { sv = localStorage.getItem(MKEY) || ''; } catch (e) {}
   if (ms.indexOf(MODE) < 0 || (sv && ms.indexOf(sv) >= 0 && MODE !== sv)) MODE = ms.indexOf(sv) >= 0 ? sv : ms[0];
-  var jht = MODE === 'jht';
+  var jht = MODE === 'jht', drv = MODE === 'drv', ids = jht || drv, LBL = { cut: 'Cutting', jht: 'Penjahit', drv: 'Driver' };
   $('who').textContent = (ST.nama || '') + (ST.email ? ' · ' + ST.email : '');
-  document.querySelector('header b').textContent = jht ? 'Scan Surat Jalan' : 'Scan KC';
-  $('main').innerHTML = (ms.length > 1 ? '<div class="tabs"><button class="chip' + (jht ? '' : ' on') + '" onclick="setMode(\'cut\')">Cutting</button><button class="chip' + (jht ? ' on' : '') + '" onclick="setMode(\'jht\')">Penjahit</button></div>' : '') +
+  document.querySelector('header b').textContent = drv ? 'Scan Driver' : jht ? 'Scan Surat Jalan' : 'Scan KC';
+  $('main').innerHTML = (ms.length > 1 ? '<div class="tabs">' + ms.map(function (m) { return '<button class="chip' + (MODE === m ? ' on' : '') + '" onclick="setMode(\'' + m + '\')">' + LBL[m] + '</button>'; }).join('') + '</div>' : '') +
     '<div class="cam" id="cam"><video id="v" playsinline muted autoplay></video><div class="aim"></div><div id="fk"></div></div><div class="ctl" id="ctl"></div>' +
-    '<div class="hint" id="hint">' + (jht ? 'Scan QR di Surat Jalan satu per satu; semua masuk keranjang. Setelah selesai, tekan <b>Proses keranjang</b>.' : 'Arahkan ke QR di label sampai masuk kotak.') + ' Jarak ±15–20 cm. Kalau buram: coba zoom 2×, ketuk layar untuk fokus, atau ganti kamera.</div>' +
+    '<div class="hint" id="hint">' + (drv ? 'Scan QR Surat Jalan yang kamu bawa: saat <b>mengambil di kantor</b> (antar) atau <b>menjemput di penjahit</b>. Semua masuk keranjang, lalu tekan <b>Proses keranjang</b>.' : jht ? 'Scan QR di Surat Jalan satu per satu; semua masuk keranjang. Setelah selesai, tekan <b>Proses keranjang</b>.' : 'Arahkan ke QR di label sampai masuk kotak.') + ' Jarak ±15–20 cm. Kalau buram: coba zoom 2×, ketuk layar untuk fokus, atau ganti kamera.</div>' +
     '<label class="btn pri" style="display:block;text-align:center;margin-bottom:12px">Foto QR (pakai kamera HP)<input type="file" id="foto" accept="image/*" capture="environment" style="display:none" onchange="foto_(this)"></label>' +
-    '<div class="card"><input class="inp" id="man" placeholder="' + (jht ? 'Atau ketik kode IDS, mis. IDS/191126-0001' : 'Atau ketik kode KC') + '" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key===\'Enter\')manual()"><div class="row"><button class="btn pri" style="flex:1" onclick="manual()">' + (jht ? 'Tambah ke keranjang' : 'Cek KC') + '</button></div></div>' +
-    (jht ? '<div id="cart" class="cart"></div><div id="cbar"></div>' : '<div id="rc"></div>') +
+    '<div class="card"><input class="inp" id="man" placeholder="' + (ids ? 'Atau ketik kode IDS, mis. IDS/191126-0001' : 'Atau ketik kode KC') + '" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key===\'Enter\')manual()"><div class="row"><button class="btn pri" style="flex:1" onclick="manual()">' + (ids ? 'Tambah ke keranjang' : 'Cek KC') + '</button></div></div>' +
+    (ids ? '<div id="cart" class="cart"></div><div id="cbar"></div>' + (drv ? '<div id="jobs"></div>' : '') : '<div id="rc"></div>') +
     '<div class="mut" id="info" style="font-size:11px;margin-top:6px"></div>';
-  if (jht) drawCart(); else rc();
+  if (jht) drawCart(); else if (drv) { drawDCart(); loadJobs_(); } else rc();
   if (!stream) kamera(); else { var v = $('v'); v.srcObject = stream; playV_(v); kontrol_(); info_(); $('cam').onclick = fokus_; }
 }
 function rc() { $('rc').innerHTML = recent.length ? '<div class="lbl">Selesai sesi ini</div>' + recent.map(function (r) { return '<div class="card" style="padding:12px"><b>' + esc(r.kc) + '</b> <span class="mut">· ' + esc(r.jam) + '</span><div class="mut">' + esc(r.nama) + ' · ' + r.qty + ' pcs</div></div>'; }).join('') : ''; }
@@ -474,8 +476,8 @@ function rc() { $('rc').innerHTML = recent.length ? '<div class="lbl">Selesai se
 function kode_(txt) { var m = /KC-\d{6}-\d{3,}/i.exec(String(txt || '')); return m ? m[0].toUpperCase() : ''; }
 function kodeIds_(txt) { var m = /IDS\/\d{6}-\d{4,}/i.exec(String(txt || '')); return m ? m[0].toUpperCase() : ''; }
 /** Kode sesuai mode: KC (Cutting) atau IDS (Penjahit). */
-function kodeMode_(txt) { return MODE === 'jht' ? kodeIds_(txt) : kode_(txt); }
-function terima_(k) { if (MODE === 'jht') jhtAdd(k); else hasil(k); }
+function kodeMode_(txt) { return MODE === 'cut' ? kode_(txt) : kodeIds_(txt); }
+function terima_(k) { if (MODE === 'jht') jhtAdd(k); else if (MODE === 'drv') drvAdd(k); else hasil(k); }
 var track = null, cap = {}, backs = [], CAMKEY = 'prodCam';
 function camSaved_() { try { return localStorage.getItem(CAMKEY) || ''; } catch (e) { return ''; } }
 /** Kamera belakang diurutkan: kamera utama biasanya nomor terkecil ("camera2 0, facing back"). Kamera wide/makro/depth sering tidak bisa fokus dekat. */
@@ -535,7 +537,7 @@ function foto_(inp) {
       var s = Math.min(1, mx / Math.max(im.width, im.height)), w = Math.round(im.width * s), h = Math.round(im.height * s), c = document.createElement('canvas'); c.width = w; c.height = h;
       var x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(im, 0, 0, w, h);
       var d = x.getImageData(0, 0, w, h).data, g = new Float32Array(w * h); for (var i = 0; i < g.length; i++) g[i] = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114;
-      var t = qd_decode_(g, w, h); if (!kodeMode_(t) && MODE !== 'jht') t = dec_frame_(d, w, h, KC_RE);
+      var t = qd_decode_(g, w, h); if (!kodeMode_(t) && MODE === 'cut') t = dec_frame_(d, w, h, KC_RE);
       if (kodeMode_(t)) { hasilTeks = t; return true; } return false;
     });
     if (hasilTeks) { terima_(kodeMode_(hasilTeks)); return; }
@@ -580,12 +582,12 @@ function tick() {
     var d = cx.getImageData(0, 0, w, h).data, g = new Float32Array(w * h);
     for (var i = 0; i < g.length; i++) g[i] = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114;
     var t = qd_decode_(g, w, h); if (t && kodeMode_(t)) { done(t); return; }
-    if (MODE !== 'jht') { t = dec_frame_(d, w, h, KC_RE); if (t) done(t); } // barcode garis (label lama) tetap terbaca
+    if (MODE === 'cut') { t = dec_frame_(d, w, h, KC_RE); if (t) done(t); } // barcode garis (label lama) tetap terbaca
   } catch (e) {}
 }
 function manual() {
   var v = ($('man').value || '').trim().toUpperCase();
-  if (MODE === 'jht') { var k = kodeIds_(v); if (!k) { toast('Bukan kode Surat Jalan (IDS)'); return; } $('man').value = ''; jhtAdd(k); return; }
+  if (MODE !== 'cut') { var k = kodeIds_(v); if (!k) { toast('Bukan kode Surat Jalan (IDS)'); return; } $('man').value = ''; terima_(k); return; }
   if (!KC_RE.test(v)) { toast('Bukan kode KC'); return; } $('man').value = ''; hasil(v);
 }
 function toast(m) { var s = $('sh'); s.innerHTML = '<div class="bad"><b class="t">' + esc(m) + '</b></div>'; $('ov').className = 'on'; setTimeout(function () { if (!busy) $('ov').className = ''; }, 1400); }
@@ -624,7 +626,7 @@ function jhtAdd(ids) {
   api('jcek', { token: ST.token, ids: ids }).then(function (r) {
     busy = false;
     if (!r.aksi) { toast(ids + ': ' + r.pesan); return; }
-    var c = { d: r, ref: newRef_(), final: true, cnt: {} };
+    var c = { d: r, ref: newRef_(), final: true, sendiri: false, cnt: {} };
     r.items.forEach(function (it) { c.cnt[it.kc] = {}; it.parts.forEach(function (p) { c.cnt[it.kc][p.key] = p.max; }); });
     CART.push(c); drawCart(); kilat_(ids + ' masuk keranjang');
   }).catch(function (e) { busy = false; tampil(false, e.message, /Token|Sesi|masuk lagi/i.test(e.message)); });
@@ -651,7 +653,8 @@ function proses_() {
     var i = CART.indexOf(c), d = c.d;
     var opsi = d.bolehSebagian ? '<label class="opt"><input type="radio" name="f' + i + '" ' + (c.final ? 'checked' : '') + ' onchange="setFinal_(' + i + ',true)"><span><b>Semua selesai</b> · kirim lembar Putih + Kuning. Yang tidak terkirim dicatat kurang.</span></label><label class="opt"><input type="radio" name="f' + i + '" ' + (c.final ? '' : 'checked') + ' onchange="setFinal_(' + i + ',false)"><span><b>Sebagian</b> · kirim lembar Putih dulu; sisanya nanti dengan lembar Kuning (kiriman terakhir).</span></label>'
       : '<div class="opt"><span><b>Kiriman terakhir</b> (lembar Kuning). Yang tidak terkirim dicatat kurang dan tidak diproduksi ulang.</span></div>';
-    return '<div class="kcbox"><div><b>' + esc(d.ids) + '</b> · ' + esc(d.nama) + ' · kiriman ' + d.ke + '</div>' + opsi + d.items.map(function (it) {
+    var lewat = '<div class="mut" style="margin-top:8px">Barang ke gudang dibawa oleh:</div><label class="opt"><input type="radio" name="s' + i + '" ' + (c.sendiri ? '' : 'checked') + ' onchange="CART[' + i + '].sendiri=false"><span><b>Dijemput driver</b> (masuk daftar jemput driver)</span></label><label class="opt"><input type="radio" name="s' + i + '" ' + (c.sendiri ? 'checked' : '') + ' onchange="CART[' + i + '].sendiri=true"><span><b>Diantar sendiri</b> oleh penjahit ke gudang</span></label>';
+    return '<div class="kcbox"><div><b>' + esc(d.ids) + '</b> · ' + esc(d.nama) + ' · kiriman ' + d.ke + '</div>' + opsi + lewat + d.items.map(function (it) {
       return '<div class="kcbox"><div><b>' + esc(it.kc) + '</b> · ' + it.qty + ' pcs</div><div class="mut" style="word-break:break-word">' + esc(it.nama) + '</div>' + it.parts.map(function (p) {
         return '<div class="prt"><label>' + esc(p.label) + (p.per > 1 ? ' <span class="mut">(' + p.per + '/pcs)</span>' : '') + '<div class="mut" style="font-size:12px">sisa ' + p.max + (p.terkirim ? ' · sudah ' + p.terkirim : '') + '</div></label><input type="number" inputmode="numeric" min="0" max="' + p.max + '" value="' + (c.cnt[it.kc][p.key]) + '" data-i="' + i + '" data-kc="' + esc(it.kc) + '" data-k="' + p.key + '" oninput="setCnt_(this)"></div>';
       }).join('') + '<div class="pv" id="pv' + i + '_' + esc(it.kc) + '">' + prevHtml_(it, c.cnt[it.kc], c.final || !d.bolehSebagian) + '</div></div>';
@@ -672,7 +675,7 @@ function hasilSheet_(judul, rows) {
   var ok = rows.filter(function (r) { return r.ok; }).map(function (r) { return r.ids; });
   CART = CART.filter(function (c) { return ok.indexOf(c.d.ids) < 0; }); drawCart();
   $('sh').innerHTML = '<div class="sheetx"><div class="kp">' + esc(judul) + '</div>' + rows.map(function (r) {
-    return '<div class="kcbox">' + (r.ok ? '<b style="color:var(--ok)">✓ ' : '<b style="color:var(--bad)">✗ ') + esc(r.ids) + '</b>' + (r.ok ? (r.ke ? ' · kiriman ' + r.ke + ' · lembar ' + esc(r.lembar) + ' · ' + r.total + ' pcs' + (r.ulang ? ' (sudah tercatat)' : '') : (r.ulang ? ' sudah diterima' : ' diterima')) : '<div>' + esc(r.error) + '</div>') +
+    return '<div class="kcbox">' + (r.ok ? '<b style="color:var(--ok)">✓ ' : '<b style="color:var(--bad)">✗ ') + esc(r.ids) + '</b>' + (r.ok ? (r.ke ? ' · kiriman ' + r.ke + ' · lembar ' + esc(r.lembar) + ' · ' + r.total + ' pcs' + (r.kirimSendiri ? ' · diantar sendiri' : r.ulang ? '' : ' · menunggu dijemput') + (r.ulang ? ' (sudah tercatat)' : '') : (r.ulang ? ' sudah diterima' : ' diterima')) : '<div>' + esc(r.error) + '</div>') +
       (r.hasil ? '<div class="pv">' + r.hasil.map(function (x) { return '<b>' + x.qty + '</b> ' + esc(x.nama); }).join(' + ') + '</div>' : '') +
       (r.kurang && r.kurang.length ? '<div class="pv"><span class="k">Kurang: ' + r.kurang.map(function (x) { return x.qty + ' ' + esc(x.nama); }).join(', ') + '</span></div>' : '') +
       (r.tanpaSku && r.tanpaSku.length ? '<div class="pv">Belum ada di Data Base Gudang: ' + r.tanpaSku.map(esc).join(', ') + '</div>' : '') + '</div>';
@@ -684,8 +687,55 @@ function kirimTerima_() {
   api('jterima', { token: ST.token, ids: ids }).then(function (r) { hasilSheet_('Terima barang', r.hasil); }).catch(function (e) { tampil(false, e.message, /Token|Sesi|masuk lagi/i.test(e.message)); });
 }
 function kirimSelesai_() {
-  var L = CART.filter(function (c) { return c.d.aksi === 'SELESAI'; }).map(function (c) { return { ids: c.d.ids, ref: c.ref, final: c.d.bolehSebagian ? c.final : true, hasil: c.cnt }; }); $('goS').disabled = true;
+  var L = CART.filter(function (c) { return c.d.aksi === 'SELESAI'; }).map(function (c) { return { ids: c.d.ids, ref: c.ref, final: c.d.bolehSebagian ? c.final : true, kirimSendiri: !!c.sendiri, hasil: c.cnt }; }); $('goS').disabled = true;
   api('jselesai', { token: ST.token, list: L }).then(function (r) { hasilSheet_('Hasil jahit terkirim', r.hasil); }).catch(function (e) { tampil(false, e.message, /Token|Sesi|masuk lagi/i.test(e.message)); });
+}
+
+/* ---------- Mode Driver: daftar job + keranjang ambil/jemput ----------
+ * Siap diantar = Surat Jalan sudah dicetak; Siap dijemput = kiriman hasil jahit menunggu. Scan -> dcek -> keranjang -> dproses.
+ * Peran DRIVER juga dipakai orang divisi lain yang menggantikan driver (nama tercatat dari akunnya). */
+var DCART = [];
+function loadJobs_() {
+  if (!$('jobs')) return;
+  api('djob', { token: ST.token }).then(function (j) {
+    if (!$('jobs')) return;
+    var sec = function (judul, L, ket) { return '<div class="lbl">' + judul + ' (' + L.length + ')</div>' + (L.length ? L.map(function (x) { return '<div class="it" style="display:block;padding:10px 12px;border:1px solid var(--line);border-radius:12px;margin-bottom:6px;background:var(--card)"><b>' + esc(x.ids) + '</b>' + (x.ke ? ' <span class="tag s">kiriman ' + x.ke + '</span>' : '') + '<div class="mut">' + esc(x.nama) + ' · ' + esc(x.kode) + ' · ' + x.pcs + ' pcs' + (x.jml && !x.ke ? ' · ' + x.jml + ' KC' : '') + '</div></div>'; }).join('') : '<div class="mut" style="padding:2px 2px 8px">' + ket + '</div>'); };
+    $('jobs').innerHTML = '<div style="display:flex;align-items:center;margin-top:12px"><b style="flex:1">Daftar job</b><button class="chip" onclick="loadJobs_()">Muat ulang</button></div>' +
+      sec('Siap diantar ke penjahit', j.antar, 'Tidak ada.') + sec('Siap dijemput dari penjahit', j.jemput, 'Tidak ada.') + sec('Sedang saya antar', j.bawa, 'Tidak ada.') + sec('Sedang saya jemput', j.dijemput, 'Tidak ada.');
+  }).catch(function (e) { if ($('jobs')) $('jobs').innerHTML = '<div class="mut">' + esc(e.message) + '</div>'; });
+}
+function drvAdd(ids) {
+  if (DCART.some(function (c) { return c.ids === ids; })) { toast(ids + ' sudah di keranjang'); return; }
+  busy = true; if (navigator.vibrate) try { navigator.vibrate(60); } catch (e) {}
+  api('dcek', { token: ST.token, ids: ids }).then(function (r) { busy = false; DCART.push(r); drawDCart(); kilat_(ids + ' masuk keranjang'); })
+    .catch(function (e) { busy = false; tampil(false, e.message, /Token|Sesi|masuk lagi/i.test(e.message)); });
+}
+function drawDCart() {
+  if (!$('cart')) return;
+  var n = DCART.length;
+  $('cart').innerHTML = n ? '<div class="lbl">Keranjang (' + n + ')</div>' + DCART.map(function (d, i) {
+    return '<div class="it"><div style="flex:1;min-width:0"><div><b>' + esc(d.ids) + '</b> <span class="tag' + (d.aksi === 'JEMPUT' ? ' s' : '') + '">' + (d.aksi === 'AMBIL' ? 'Ambil · antar ke penjahit' : 'Jemput · kiriman ' + d.kirim.map(function (k) { return k.ke; }).join('+')) + '</span></div><div class="mut">' + esc(d.nama) + ' · ' + d.pcs + ' pcs</div></div><button class="x" aria-label="Hapus" onclick="DCART.splice(' + i + ',1);drawDCart()">×</button></div>';
+  }).join('') : '<div class="mut" style="padding:6px 2px">Keranjang kosong. Scan QR di Surat Jalan yang kamu bawa.</div>';
+  $('cbar').innerHTML = n ? '<button class="btn pri" style="width:100%" onclick="dproses_()">Proses keranjang (' + n + ')</button>' : '';
+}
+function dproses_() {
+  var A = DCART.filter(function (d) { return d.aksi === 'AMBIL'; }), J = DCART.filter(function (d) { return d.aksi === 'JEMPUT'; });
+  var blok = function (judul, L, ket) { return L.length ? '<div class="kp">' + judul + ' (' + L.length + ')</div><div class="mut">' + ket + '</div>' + L.map(function (d) { return '<div class="kcbox"><b>' + esc(d.ids) + '</b> · ' + esc(d.nama) + ' · ' + d.pcs + ' pcs</div>'; }).join('') : ''; };
+  $('sh').innerHTML = '<div class="sheetx">' + blok('Ambil untuk diantar', A, 'Barang & 3 lembar Surat Jalan dibawa ke penjahit. Penjahit scan terima saat sampai.') +
+    blok('Jemput hasil jahit', J, 'Barang jadi + lembar Putih/Kuning dibawa ke gudang. Gudang mencatat saat barang diterima.') +
+    '<button class="btn pri" style="width:100%;margin-top:8px" id="goD" onclick="kirimDriver_()">Konfirmasi ' + DCART.length + ' Surat Jalan</button><button class="btn" style="width:100%;margin-top:10px" onclick="tutup()">Tutup</button></div>';
+  $('ov').className = 'on'; busy = true;
+}
+function kirimDriver_() {
+  $('goD').disabled = true;
+  api('dproses', { token: ST.token, ids: DCART.map(function (d) { return d.ids; }) }).then(function (r) {
+    var ok = r.hasil.filter(function (x) { return x.ok; }).map(function (x) { return x.ids; });
+    DCART = DCART.filter(function (d) { return ok.indexOf(d.ids) < 0; }); drawDCart(); loadJobs_();
+    $('sh').innerHTML = '<div class="sheetx"><div class="kp">Tercatat</div>' + r.hasil.map(function (x) {
+      return '<div class="kcbox">' + (x.ok ? '<b style="color:var(--ok)">✓ ' : '<b style="color:var(--bad)">✗ ') + esc(x.ids) + '</b>' + (x.ok ? ' · ' + (x.aksi === 'AMBIL' ? 'sedang diantar' : 'sedang dijemput') + (x.pcs ? ' · ' + x.pcs + ' pcs' : '') + (x.ulang ? ' (sudah tercatat)' : '') : '<div>' + esc(x.error) + '</div>') + '</div>';
+    }).join('') + '<button class="btn pri" style="width:100%;margin-top:10px" onclick="tutup()">' + (DCART.length ? 'Kembali ke keranjang' : 'Scan berikutnya') + '</button></div>';
+    $('ov').className = 'on';
+  }).catch(function (e) { tampil(false, e.message, /Token|Sesi|masuk lagi/i.test(e.message)); });
 }
 if (!window.__NOBOOT) boot();
 </script></body></html>

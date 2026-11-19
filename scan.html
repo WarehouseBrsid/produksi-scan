@@ -20,7 +20,7 @@ main{max-width:560px;margin:0 auto;padding:14px 16px 40px}.card{background:var(-
 .ok{width:64px;height:64px;border-radius:50%;background:var(--ok);color:#fff;display:grid;place-items:center;font-size:36px;margin:0 auto 10px}.bad b.t{color:var(--bad);font-size:18px}
 a.btn{display:block;text-decoration:none;text-align:center}.lbl{font-size:11px;letter-spacing:.08em;color:var(--mut);font-weight:600;text-transform:uppercase;margin:14px 2px 6px}
 </style></head><body>
-<header><div class="tile">P</div><div><small>PRODUKSI · QR v2</small><b>Scan KC</b></div><span class="sp"></span><span id="who"></span></header>
+<header><div class="tile">P</div><div><small>PRODUKSI · QR v3</small><b>Scan KC</b></div><span class="sp"></span><span id="who"></span></header>
 <main id="main"></main>
 <div id="ov"><div class="sheet" id="sh"></div></div>
 <script>
@@ -405,27 +405,83 @@ function gagal(msg) {
 function mulai() {
   $('who').textContent = (ST.nama || '') + (ST.email ? ' · ' + ST.email : '');
   $('main').innerHTML = '<div class="cam" id="cam"><video id="v" playsinline muted autoplay></video><div class="aim"></div><div id="fk"></div></div><div class="ctl" id="ctl"></div>' +
-    '<div class="hint" id="hint">Arahkan ke QR di label sampai masuk kotak. Jarak ±15–20 cm; kalau buram, pakai zoom 2× lalu jauhkan HP sedikit, atau ketuk layar untuk fokus.</div>' +
-    '<div class="card"><input class="inp" id="man" placeholder="Atau ketik kode KC" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key===\'Enter\')manual()"><div class="row"><button class="btn pri" style="flex:1" onclick="manual()">Cek KC</button></div></div><div id="rc"></div>';
+    '<div class="hint" id="hint">Arahkan ke QR di label sampai masuk kotak. Jarak ±15–20 cm. Kalau buram: coba zoom 2×, ketuk layar untuk fokus, atau ganti kamera.</div>' +
+    '<label class="btn pri" style="display:block;text-align:center;margin-bottom:12px">Foto QR (pakai kamera HP)<input type="file" id="foto" accept="image/*" capture="environment" style="display:none" onchange="foto_(this)"></label>' +
+    '<div class="card"><input class="inp" id="man" placeholder="Atau ketik kode KC" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key===\'Enter\')manual()"><div class="row"><button class="btn pri" style="flex:1" onclick="manual()">Cek KC</button></div></div><div id="rc"></div>' +
+    '<div class="mut" id="info" style="font-size:11px;margin-top:6px"></div>';
   rc(); kamera();
 }
 function rc() { $('rc').innerHTML = recent.length ? '<div class="lbl">Selesai sesi ini</div>' + recent.map(function (r) { return '<div class="card" style="padding:12px"><b>' + esc(r.kc) + '</b> <span class="mut">· ' + esc(r.jam) + '</span><div class="mut">' + esc(r.nama) + ' · ' + r.qty + ' pcs</div></div>'; }).join('') : ''; }
 /** Ambil kode dari hasil pindai: QR label berisi link ...?kc=KC-..., barcode garis berisi KC langsung. */
 function kode_(txt) { var m = /KC-\d{6}-\d{3,}/i.exec(String(txt || '')); return m ? m[0].toUpperCase() : ''; }
-var track = null, cap = {};
-function kamera() {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('hint').textContent = 'Kamera tidak tersedia di browser ini. Ketik kode KC di bawah.'; return; }
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }).then(function (s) {
+var track = null, cap = {}, backs = [], CAMKEY = 'prodCam';
+function camSaved_() { try { return localStorage.getItem(CAMKEY) || ''; } catch (e) { return ''; } }
+/** Kamera belakang diurutkan: kamera utama biasanya nomor terkecil ("camera2 0, facing back"). Kamera wide/makro/depth sering tidak bisa fokus dekat. */
+function backCams_(list) {
+  var v = list.filter(function (d) { return d.kind === 'videoinput'; }), b = v.filter(function (d) { return /back|rear|belakang|environment/i.test(d.label); });
+  if (!b.length) b = v.filter(function (d) { return !/front|depan|user/i.test(d.label); });
+  var num = function (d) { var m = /(\d+)\s*,/.exec(d.label) || /(\d+)(?!.*\d)/.exec(d.label); return m ? Number(m[1]) : 99; }; // "camera2 0, facing back" -> 0
+  return b.sort(function (x, y) { return num(x) - num(y); });
+}
+function kamera(devId) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('hint').textContent = 'Kamera tidak tersedia di browser ini. Pakai tombol Foto QR atau ketik kode KC.'; return; }
+  if (stream) { try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} stream = null; }
+  clearInterval(timer);
+  var id = devId || camSaved_(), vc = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+  if (id) vc.deviceId = { exact: id }; else vc.facingMode = { ideal: 'environment' };
+  navigator.mediaDevices.getUserMedia({ video: vc, audio: false }).then(function (s) {
     stream = s; var v = $('v'); v.srcObject = s; v.play();
     track = s.getVideoTracks()[0]; try { cap = track.getCapabilities ? track.getCapabilities() : {}; } catch (e) { cap = {}; }
     atur_({ focusMode: 'continuous' }, cap.focusMode && cap.focusMode.indexOf('continuous') >= 0);
-    kontrol_();
     $('cam').onclick = fokus_;
     try {
-      if ('BarcodeDetector' in window) BarcodeDetector.getSupportedFormats().then(function (f) { var w = ['qr_code', 'code_128'].filter(function (x) { return f.indexOf(x) >= 0; }); if (w.length) bd = new BarcodeDetector({ formats: w }); }).catch(function () {});
+      if (!bd && 'BarcodeDetector' in window) BarcodeDetector.getSupportedFormats().then(function (f) { var w = ['qr_code', 'code_128'].filter(function (x) { return f.indexOf(x) >= 0; }); if (w.length) bd = new BarcodeDetector({ formats: w }); }).catch(function () {});
     } catch (e) {}
     timer = setInterval(tick, 160);
-  }).catch(function (e) { $('hint').innerHTML = 'Kamera tidak bisa dibuka (' + esc((e && e.name) || e) + '). Izinkan akses kamera di pengaturan situs, lalu muat ulang. Sementara, ketik kode KC di bawah.'; });
+    var curId = (track.getSettings && track.getSettings().deviceId) || '';
+    (navigator.mediaDevices.enumerateDevices ? navigator.mediaDevices.enumerateDevices() : Promise.resolve([])).then(function (list) {
+      backs = backCams_(list);
+      // pertama kali: pindah ke kamera utama bila browser memilih kamera lain (mis. ultra-wide)
+      if (!id && backs.length > 1 && backs[0].deviceId && backs[0].deviceId !== curId) { kamera(backs[0].deviceId); return; }
+      kontrol_(); info_();
+    }).catch(function () { kontrol_(); info_(); });
+  }).catch(function (e) {
+    if (id && !devId) { try { localStorage.removeItem(CAMKEY); } catch (x) {} kamera(''); return; } // kamera tersimpan sudah tidak ada
+    $('hint').innerHTML = 'Kamera tidak bisa dibuka (' + esc((e && e.name) || e) + '). Izinkan akses kamera di pengaturan situs, lalu muat ulang. Sementara, pakai tombol Foto QR atau ketik kode KC.';
+  });
+}
+function gantiCam_() {
+  if (!backs.length) return;
+  var cur = (track && track.getSettings && track.getSettings().deviceId) || '', i = 0;
+  for (var k = 0; k < backs.length; k++) if (backs[k].deviceId === cur) i = k;
+  var nx = backs[(i + 1) % backs.length].deviceId; try { localStorage.setItem(CAMKEY, nx); } catch (e) {}
+  kamera(nx);
+}
+function info_() { // baris kecil untuk diagnosa (kirim screenshot bila ada masalah)
+  try {
+    var st = track.getSettings ? track.getSettings() : {}, lb = track.label || '';
+    $('info').textContent = 'Kamera: ' + (lb || '-') + ' · ' + (st.width || '?') + 'x' + (st.height || '?') + ' · zoom ' + (cap.zoom ? 'maks ' + cap.zoom.max : 'tidak ada') + ' · fokus ' + ((cap.focusMode || []).join('/') || 'tidak diatur') + ' · pembaca ' + (bd ? 'bawaan+sendiri' : 'sendiri') + ' · ' + backs.length + ' kamera belakang';
+  } catch (e) {}
+}
+/** Foto dari aplikasi kamera HP (fokus & ketajaman diurus kamera HP), lalu dibaca. */
+function foto_(inp) {
+  var f = inp.files && inp.files[0]; inp.value = ''; if (!f || busy) return;
+  var url = URL.createObjectURL(f), im = new Image();
+  im.onload = function () {
+    URL.revokeObjectURL(url); var hasilTeks = '';
+    [1600, 1100, 2200].some(function (mx) {
+      var s = Math.min(1, mx / Math.max(im.width, im.height)), w = Math.round(im.width * s), h = Math.round(im.height * s), c = document.createElement('canvas'); c.width = w; c.height = h;
+      var x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(im, 0, 0, w, h);
+      var d = x.getImageData(0, 0, w, h).data, g = new Float32Array(w * h); for (var i = 0; i < g.length; i++) g[i] = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114;
+      var t = qd_decode_(g, w, h); if (!kode_(t)) t = dec_frame_(d, w, h, KC_RE);
+      if (kode_(t)) { hasilTeks = t; return true; } return false;
+    });
+    if (hasilTeks) { hasil(kode_(hasilTeks)); return; }
+    if (bd) bd.detect(im).then(function (r) { var k = r && r.length && kode_(r[0].rawValue); if (k) hasil(k); else toast('QR tidak terbaca di foto. Foto lebih dekat & tajam.'); }).catch(function () { toast('QR tidak terbaca di foto. Foto lebih dekat & tajam.'); });
+    else toast('QR tidak terbaca di foto. Foto lebih dekat & tajam.');
+  };
+  im.onerror = function () { URL.revokeObjectURL(url); toast('Foto tidak bisa dibuka.'); };
+  im.src = url;
 }
 function atur_(c, boleh) { if (!track || !boleh) return Promise.resolve(); try { return track.applyConstraints({ advanced: [c] }).catch(function () {}); } catch (e) { return Promise.resolve(); } }
 /** Tombol zoom (bila kamera mendukung) & lampu. Zoom 2x membantu label kecil: HP bisa agak jauh sehingga fokus tajam. */
@@ -439,6 +495,7 @@ function kontrol_() {
     atur_({ zoom: zoomNow }, true);
   }
   if (cap.torch) html += '<button class="chip" id="lp" onclick="lampu_()">Lampu</button>';
+  if (backs.length > 1) html += '<button class="chip" id="gc" onclick="gantiCam_()">Ganti kamera (' + backs.length + ')</button>';
   $('ctl').innerHTML = html;
 }
 function zoom_(x) { zoomNow = x; atur_({ zoom: x }, true); Array.prototype.forEach.call($('ctl').querySelectorAll('.chip'), function (b) { if (/×$/.test(b.textContent)) b.className = 'chip' + (b.textContent === x + '×' ? ' on' : ''); }); }

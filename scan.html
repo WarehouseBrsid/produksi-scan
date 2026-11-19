@@ -29,7 +29,7 @@ a.btn{display:block;text-decoration:none;text-align:center}.lbl{font-size:11px;l
 .pv{font-size:13px;margin-top:6px;color:var(--mut)}.pv b{color:var(--ink)}.pv .k{color:var(--bad)}
 .opt{display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid var(--line);border-radius:10px;margin-top:6px;font-size:14px}
 </style></head><body>
-<header><div class="tile"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5v14M3 15h18v4M11 15v-4.5h6.5A3.5 3.5 0 0 1 21 14v1"/><rect x="5.2" y="11" width="4.4" height="3" rx="1.2"/></svg></div><div><small>PRODUKSI · QR v5</small><b>Scan KC</b></div><span class="sp"></span><span id="who"></span></header>
+<header><div class="tile"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5v14M3 15h18v4M11 15v-4.5h6.5A3.5 3.5 0 0 1 21 14v1"/><rect x="5.2" y="11" width="4.4" height="3" rx="1.2"/></svg></div><div><small>PRODUKSI · QR v6</small><b>Scan KC</b></div><span class="sp"></span><span id="who"></span></header>
 <main id="main"></main>
 <div id="ov"><div class="sheet" id="sh"></div></div>
 <script>
@@ -38,7 +38,8 @@ a.btn{display:block;text-decoration:none;text-align:center}.lbl{font-size:11px;l
  * KENAPA     : iframe Apps Script memblokir kamera ("Permission denied"). Halaman ini berdiri sendiri (HTTPS top-level),
  *              membuka kamera sendiri, lalu memanggil Web App Produksi lewat fetch (doPost) dengan token sesi.
  * MODE       : Cutting (scan label KC satu-satu), Penjahit (keranjang Surat Jalan: terima / selesai jahit per komponen),
- *              Driver (keranjang Surat Jalan: ambil untuk diantar / jemput hasil jahit, + daftar job).
+ *              Driver (keranjang Surat Jalan: ambil untuk diantar / jemput hasil jahit, + daftar job, batalkan),
+ *              Loading (scan Surat Jalan / label barang di gudang -> periksa qty diterima & reject -> konfirmasi ke antrean Gudang).
  * ALUR       : Produksi (layar Scan) -> "Scan dengan kamera" -> tiket sekali pakai di #hash -> halaman ini menukar tiket
  *              jadi token sesi (disimpan di browser, 12 jam) -> kamera membaca barcode Code128 KC -> cek -> konfirmasi -> selesai.
  * PEMBACA    : QR (utama, label berisi link ?kc=KC-...) + Code128 (label lama). Pembaca buatan sendiri tanpa pustaka luar;
@@ -451,6 +452,7 @@ function modes_() {
   if (adm || r.indexOf('WORKER') >= 0 || !r.length) m.push('cut');
   if (adm || ['PACKING', 'ADMPROD', 'JAHIT'].some(function (x) { return r.indexOf(x) >= 0; })) m.push('jht');
   if (adm || r.indexOf('DRIVER') >= 0) m.push('drv');
+  if (adm || r.indexOf('LOADING') >= 0) m.push('ldg');
   return m.length ? m : ['cut'];
 }
 function playV_(v) { try { var pr = v.play(); if (pr && pr.catch) pr.catch(function () {}); } catch (e) {} }
@@ -458,17 +460,17 @@ function setMode(m) { MODE = m; try { localStorage.setItem(MKEY, m); } catch (e)
 function mulai() {
   var ms = modes_(), sv = ''; try { sv = localStorage.getItem(MKEY) || ''; } catch (e) {}
   if (ms.indexOf(MODE) < 0 || (sv && ms.indexOf(sv) >= 0 && MODE !== sv)) MODE = ms.indexOf(sv) >= 0 ? sv : ms[0];
-  var jht = MODE === 'jht', drv = MODE === 'drv', ids = jht || drv, LBL = { cut: 'Cutting', jht: 'Penjahit', drv: 'Driver' };
+  var jht = MODE === 'jht', drv = MODE === 'drv', ldg = MODE === 'ldg', ids = jht || drv || ldg, LBL = { cut: 'Cutting', jht: 'Penjahit', drv: 'Driver', ldg: 'Loading' };
   $('who').textContent = (ST.nama || '') + (ST.email ? ' · ' + ST.email : '');
-  document.querySelector('header b').textContent = drv ? 'Scan Driver' : jht ? 'Scan Surat Jalan' : 'Scan KC';
+  document.querySelector('header b').textContent = ldg ? 'Scan Loading' : drv ? 'Scan Driver' : jht ? 'Scan Surat Jalan' : 'Scan KC';
   $('main').innerHTML = (ms.length > 1 ? '<div class="tabs">' + ms.map(function (m) { return '<button class="chip' + (MODE === m ? ' on' : '') + '" onclick="setMode(\'' + m + '\')">' + LBL[m] + '</button>'; }).join('') + '</div>' : '') +
     '<div class="cam" id="cam"><video id="v" playsinline muted autoplay></video><div class="aim"></div><div id="fk"></div></div><div class="ctl" id="ctl"></div>' +
-    '<div class="hint" id="hint">' + (drv ? 'Scan QR Surat Jalan yang kamu bawa: saat <b>mengambil di kantor</b> (antar) atau <b>menjemput di penjahit</b>. Semua masuk keranjang, lalu tekan <b>Proses keranjang</b>.' : jht ? 'Scan QR di Surat Jalan satu per satu; semua masuk keranjang. Setelah selesai, tekan <b>Proses keranjang</b>.' : 'Arahkan ke QR di label sampai masuk kotak.') + ' Jarak ±15–20 cm. Kalau buram: coba zoom 2×, ketuk layar untuk fokus, atau ganti kamera.</div>' +
+    '<div class="hint" id="hint">' + (ldg ? 'Barang jadi sampai di gudang: scan QR <b>Surat Jalan</b> atau <b>label barang</b>, periksa jumlahnya, lalu konfirmasi.' : drv ? 'Scan QR Surat Jalan yang kamu bawa: saat <b>mengambil di kantor</b> (antar) atau <b>menjemput di penjahit</b>. Semua masuk keranjang, lalu tekan <b>Proses keranjang</b>.' : jht ? 'Scan QR di Surat Jalan satu per satu; semua masuk keranjang. Setelah selesai, tekan <b>Proses keranjang</b>.' : 'Arahkan ke QR di label sampai masuk kotak.') + ' Jarak ±15–20 cm. Kalau buram: coba zoom 2×, ketuk layar untuk fokus, atau ganti kamera.</div>' +
     '<label class="btn pri" style="display:block;text-align:center;margin-bottom:12px">Foto QR (pakai kamera HP)<input type="file" id="foto" accept="image/*" capture="environment" style="display:none" onchange="foto_(this)"></label>' +
-    '<div class="card"><input class="inp" id="man" placeholder="' + (ids ? 'Atau ketik kode IDS, mis. IDS/191126-0001' : 'Atau ketik kode KC') + '" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key===\'Enter\')manual()"><div class="row"><button class="btn pri" style="flex:1" onclick="manual()">' + (ids ? 'Tambah ke keranjang' : 'Cek KC') + '</button></div></div>' +
-    (ids ? '<div id="cart" class="cart"></div><div id="cbar"></div>' + (drv ? '<div id="jobs"></div>' : '') : '<div id="rc"></div>') +
+    '<div class="card"><input class="inp" id="man" placeholder="' + (ids ? 'Atau ketik kode IDS, mis. IDS/191126-0001' : 'Atau ketik kode KC') + '" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key===\'Enter\')manual()"><div class="row"><button class="btn pri" style="flex:1" onclick="manual()">' + (ldg ? 'Cek Surat Jalan' : ids ? 'Tambah ke keranjang' : 'Cek KC') + '</button></div></div>' +
+    (ldg ? '<div id="rc"></div>' : ids ? '<div id="cart" class="cart"></div><div id="cbar"></div>' + (drv ? '<div id="jobs"></div>' : '') : '<div id="rc"></div>') +
     '<div class="mut" id="info" style="font-size:11px;margin-top:6px"></div>';
-  if (jht) drawCart(); else if (drv) { drawDCart(); loadJobs_(); } else rc();
+  if (jht) drawCart(); else if (drv) { drawDCart(); loadJobs_(); } else if (ldg) rcL_(); else rc();
   if (!stream) kamera(); else { var v = $('v'); v.srcObject = stream; playV_(v); kontrol_(); info_(); $('cam').onclick = fokus_; }
 }
 function rc() { $('rc').innerHTML = recent.length ? '<div class="lbl">Selesai sesi ini</div>' + recent.map(function (r) { return '<div class="card" style="padding:12px"><b>' + esc(r.kc) + '</b> <span class="mut">· ' + esc(r.jam) + '</span><div class="mut">' + esc(r.nama) + ' · ' + r.qty + ' pcs</div></div>'; }).join('') : ''; }
@@ -476,8 +478,8 @@ function rc() { $('rc').innerHTML = recent.length ? '<div class="lbl">Selesai se
 function kode_(txt) { var m = /KC-\d{6}-\d{3,}/i.exec(String(txt || '')); return m ? m[0].toUpperCase() : ''; }
 function kodeIds_(txt) { var m = /IDS\/\d{6}-\d{4,}/i.exec(String(txt || '')); return m ? m[0].toUpperCase() : ''; }
 /** Kode sesuai mode: KC (Cutting) atau IDS (Penjahit). */
-function kodeMode_(txt) { return MODE === 'cut' ? kode_(txt) : kodeIds_(txt); }
-function terima_(k) { if (MODE === 'jht') jhtAdd(k); else if (MODE === 'drv') drvAdd(k); else hasil(k); }
+function kodeMode_(txt) { return MODE === 'cut' ? kode_(txt) : MODE === 'ldg' ? (kodeIds_(txt) || kode_(txt)) : kodeIds_(txt); } // Loading: Surat Jalan atau label barang (KC)
+function terima_(k) { if (MODE === 'jht') jhtAdd(k); else if (MODE === 'drv') drvAdd(k); else if (MODE === 'ldg') ldgCek(k); else hasil(k); }
 var track = null, cap = {}, backs = [], CAMKEY = 'prodCam';
 function camSaved_() { try { return localStorage.getItem(CAMKEY) || ''; } catch (e) { return ''; } }
 /** Kamera belakang diurutkan: kamera utama biasanya nomor terkecil ("camera2 0, facing back"). Kamera wide/makro/depth sering tidak bisa fokus dekat. */
@@ -587,7 +589,7 @@ function tick() {
 }
 function manual() {
   var v = ($('man').value || '').trim().toUpperCase();
-  if (MODE !== 'cut') { var k = kodeIds_(v); if (!k) { toast('Bukan kode Surat Jalan (IDS)'); return; } $('man').value = ''; terima_(k); return; }
+  if (MODE !== 'cut') { var k = kodeMode_(v); if (!k) { toast('Bukan kode Surat Jalan (IDS)'); return; } $('man').value = ''; terima_(k); return; }
   if (!KC_RE.test(v)) { toast('Bukan kode KC'); return; } $('man').value = ''; hasil(v);
 }
 function toast(m) { var s = $('sh'); s.innerHTML = '<div class="bad"><b class="t">' + esc(m) + '</b></div>'; $('ov').className = 'on'; setTimeout(function () { if (!busy) $('ov').className = ''; }, 1400); }
@@ -699,9 +701,9 @@ function loadJobs_() {
   if (!$('jobs')) return;
   api('djob', { token: ST.token }).then(function (j) {
     if (!$('jobs')) return;
-    var sec = function (judul, L, ket) { return '<div class="lbl">' + judul + ' (' + L.length + ')</div>' + (L.length ? L.map(function (x) { return '<div class="it" style="display:block;padding:10px 12px;border:1px solid var(--line);border-radius:12px;margin-bottom:6px;background:var(--card)"><b>' + esc(x.ids) + '</b>' + (x.ke ? ' <span class="tag s">kiriman ' + x.ke + '</span>' : '') + '<div class="mut">' + esc(x.nama) + ' · ' + esc(x.kode) + ' · ' + x.pcs + ' pcs' + (x.jml && !x.ke ? ' · ' + x.jml + ' KC' : '') + '</div></div>'; }).join('') : '<div class="mut" style="padding:2px 2px 8px">' + ket + '</div>'); };
+    var sec = function (judul, L, ket, batal) { return '<div class="lbl">' + judul + ' (' + L.length + ')</div>' + (L.length ? L.map(function (x) { return '<div class="it" style="padding:10px 12px;border:1px solid var(--line);border-radius:12px;margin-bottom:6px;background:var(--card)"><div style="flex:1;min-width:0"><b>' + esc(x.ids) + '</b>' + (x.ke ? ' <span class="tag s">kiriman ' + x.ke + '</span>' : '') + '<div class="mut">' + esc(x.nama) + ' · ' + esc(x.kode) + ' · ' + x.pcs + ' pcs' + (x.jml && !x.ke ? ' · ' + x.jml + ' KC' : '') + '</div></div>' + (batal ? '<button class="chip" data-ids="' + esc(x.ids) + '" onclick="dbatal_(this.dataset.ids)">Batalkan</button>' : '') + '</div>'; }).join('') : '<div class="mut" style="padding:2px 2px 8px">' + ket + '</div>'); };
     $('jobs').innerHTML = '<div style="display:flex;align-items:center;margin-top:12px"><b style="flex:1">Daftar job</b><button class="chip" onclick="loadJobs_()">Muat ulang</button></div>' +
-      sec('Siap diantar ke penjahit', j.antar, 'Tidak ada.') + sec('Siap dijemput dari penjahit', j.jemput, 'Tidak ada.') + sec('Sedang saya antar', j.bawa, 'Tidak ada.') + sec('Sedang saya jemput', j.dijemput, 'Tidak ada.');
+      sec('Siap diantar ke penjahit', j.antar, 'Tidak ada.') + sec('Siap dijemput dari penjahit', j.jemput, 'Tidak ada.') + sec('Sedang saya antar', j.bawa, 'Tidak ada.', 1) + sec('Sedang saya jemput', j.dijemput, 'Tidak ada.', 1);
   }).catch(function (e) { if ($('jobs')) $('jobs').innerHTML = '<div class="mut">' + esc(e.message) + '</div>'; });
 }
 function drvAdd(ids) {
@@ -736,6 +738,57 @@ function kirimDriver_() {
     }).join('') + '<button class="btn pri" style="width:100%;margin-top:10px" onclick="tutup()">' + (DCART.length ? 'Kembali ke keranjang' : 'Scan berikutnya') + '</button></div>';
     $('ov').className = 'on';
   }).catch(function (e) { tampil(false, e.message, /Token|Sesi|masuk lagi/i.test(e.message)); });
+}
+
+/** Batalkan ambil/jemput yang salah (alasan wajib). Kiriman yang sudah dijemput dikembalikan ke Tinggal Jemput. */
+function dbatal_(ids) {
+  busy = true;
+  $('sh').innerHTML = '<div class="sheetx"><div class="kp">Batalkan ' + esc(ids) + '?</div><div class="mut">Pakai kalau salah scan / salah ambil. Status kembali ke Tinggal Antar / Tinggal Jemput.</div><input class="inp" id="dba" style="margin-top:10px;font-size:16px;text-align:left" maxlength="200" placeholder="Alasan (wajib), mis. salah ambil"><div class="row"><button class="btn" style="flex:1" onclick="tutup()">Kembali</button><button class="btn pri" style="flex:1" id="goB">Batalkan</button></div></div>';
+  $('ov').className = 'on';
+  $('goB').onclick = function () { $('goB').disabled = true; api('dbatal', { token: ST.token, ids: ids, alasan: $('dba').value }).then(function (r) { tampil(true, r.ket); loadJobs_(); }).catch(function (e) { tampil(false, e.message); }); };
+}
+
+/* ---------- Mode Loading (PIC Loading di gudang) ----------
+ * Scan QR Surat Jalan atau label barang -> lcek -> daftar kiriman yang menuju gudang & barangnya -> isi Diterima / Reject
+ * (awal = jumlah kiriman, reject 0) -> Konfirmasi (lkonfirm, ref unik). Hasil masuk tab "Stock diloading" di Web App Gudang. */
+var LD = null, LREC = [];
+function rcL_() { if ($('rc')) $('rc').innerHTML = LREC.length ? '<div class="lbl">Diterima sesi ini</div>' + LREC.map(function (r) { return '<div class="card" style="padding:12px"><b>' + esc(r.ids) + '</b> <span class="mut">· ' + esc(r.jam) + '</span><div class="mut">diterima ' + r.terima + (r.reject ? ' · reject ' + r.reject : '') + (r.selisih ? ' · selisih ' + r.selisih : '') + (r.selesai ? ' · IDS selesai' : '') + '</div></div>'; }).join('') : ''; }
+function ldgCek(kode) {
+  busy = true; if (navigator.vibrate) try { navigator.vibrate(60); } catch (e) {}
+  api('lcek', { token: ST.token, kode: kode }).then(function (r) {
+    LD = { d: r, ref: newRef_(), pakai: {}, v: {} };
+    r.kirim.forEach(function (k) { LD.pakai[k.ke] = true; k.barang.forEach(function (b) { LD.v[k.ke + '|' + b.kc + '|' + b.nama] = { terima: b.qty, reject: 0 }; }); });
+    ldgForm_();
+  }).catch(function (e) { last.t = Date.now(); tampil(false, e.message, /Token|Sesi|masuk lagi/i.test(e.message)); });
+}
+function ldgForm_() {
+  var d = LD.d;
+  $('sh').innerHTML = '<div class="sheetx"><div class="mut" style="letter-spacing:.08em;font-weight:600">TERIMA DI GUDANG</div><div class="kp" style="margin-top:4px">' + esc(d.ids) + '</div><div class="mut">' + esc(d.nama) + ' · ' + esc(d.kode) + '</div>' +
+    d.kirim.map(function (k) {
+      return '<div class="kcbox"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" ' + (LD.pakai[k.ke] ? 'checked' : '') + ' onchange="LD.pakai[' + k.ke + ']=this.checked"><b>Kiriman ' + k.ke + ' · lembar ' + esc(k.lembar) + '</b></label><div class="mut" style="font-size:12px">' + (k.metode === 'ANTAR_SENDIRI' ? 'diantar penjahit' : k.jemputOleh ? 'dijemput ' + esc(k.jemputOleh) : 'belum discan jemput') + ' · ' + k.total + ' pcs</div>' +
+        k.barang.map(function (b) {
+          var key = k.ke + '|' + b.kc + '|' + b.nama, v = LD.v[key];
+          return '<div class="kcbox"><div style="word-break:break-word"><b>' + esc(b.nama) + '</b></div><div class="mut" style="font-size:12px">' + esc(b.sku || 'SKU belum ada di Data Base') + ' · ' + esc(b.kc) + ' · dikirim <b>' + b.qty + '</b></div>' +
+            '<div class="prt"><label>Diterima baik</label><input type="number" inputmode="numeric" min="0" max="' + b.qty + '" value="' + v.terima + '" data-key="' + esc(key) + '" data-f="terima" oninput="ldgSet_(this,' + b.qty + ')"></div>' +
+            '<div class="prt"><label>Reject (ke Defect)</label><input type="number" inputmode="numeric" min="0" max="' + b.qty + '" value="' + v.reject + '" data-key="' + esc(key) + '" data-f="reject" oninput="ldgSet_(this,' + b.qty + ')"></div>' +
+            '<div class="pv" id="ls_' + esc(key) + '">' + ldgSel_(b.qty, v) + '</div></div>';
+        }).join('') + (k.kurang.length ? '<div class="pv"><span class="k">Kurang dari penjahit: ' + k.kurang.map(function (x) { return x.qty + ' ' + esc(x.nama); }).join(', ') + '</span></div>' : '') + '</div>';
+    }).join('') +
+    '<input class="inp" id="lcat" style="font-size:15px;text-align:left;margin-top:6px" maxlength="200" placeholder="Catatan (opsional)">' +
+    '<div class="row"><button class="btn" style="flex:1" onclick="last.t=Date.now();tutup()">Batal</button><button class="btn pri" style="flex:2" id="goL" onclick="ldgKirim_()">Konfirmasi diterima</button></div></div>';
+  $('ov').className = 'on';
+}
+function ldgSel_(q, v) { var s = q - (Number(v.terima) || 0) - (Number(v.reject) || 0); return s > 0 ? '<span class="k">Selisih ' + s + ' (tidak ada / hilang)</span>' : s < 0 ? '<span class="k">Melebihi jumlah kiriman</span>' : 'Cocok dengan kiriman'; }
+function ldgSet_(el, q) { var v = LD.v[el.dataset.key], n = Math.floor(Number(el.value)); if (!isFinite(n) || n < 0) n = 0; if (n > q) { n = q; el.value = n; } v[el.dataset.f] = el.value === '' ? 0 : n; document.getElementById('ls_' + el.dataset.key).innerHTML = ldgSel_(q, v); }
+function ldgKirim_() {
+  var d = LD.d, kirim = d.kirim.filter(function (k) { return LD.pakai[k.ke]; }).map(function (k) { return { ke: k.ke, barang: k.barang.map(function (b) { var v = LD.v[k.ke + '|' + b.kc + '|' + b.nama]; return { kc: b.kc, nama: b.nama, terima: v.terima, reject: v.reject }; }) }; });
+  if (!kirim.length) { toast('Pilih minimal 1 kiriman'); return; }
+  $('goL').disabled = true;
+  api('lkonfirm', { token: ST.token, data: { ids: d.ids, ref: LD.ref, catatan: $('lcat').value, kirim: kirim } }).then(function (r) {
+    last = { kc: d.ids, t: Date.now() + 8000 }; // Surat Jalan masih di depan kamera: jangan langsung terbaca lagi
+    if (!r.ulang) LREC.unshift({ ids: d.ids, terima: r.terima, reject: r.reject, selisih: r.selisih, selesai: r.selesai, jam: new Date().toTimeString().slice(0, 5) }); LREC = LREC.slice(0, 8); rcL_();
+    tampil(true, d.ids + (r.ulang ? ' sudah tercatat.' : ' diterima: ' + r.terima + ' pcs' + (r.reject ? ', reject ' + r.reject : '') + (r.selisih ? ', selisih ' + r.selisih : '') + '. Lanjut ke tab "Stock diloading" di Web App Gudang.'));
+  }).catch(function (e) { tampil(false, e.message); });
 }
 if (!window.__NOBOOT) boot();
 </script></body></html>

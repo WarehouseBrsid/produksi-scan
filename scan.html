@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0f6368">
+<title>Scan KC · Produksi</title>
+<style>
+:root{--bg:#eef1f4;--card:#fff;--ink:#1b2a33;--mut:#5f6f78;--line:#dde3e8;--pri:#0f6368;--ok:#1f9d63;--bad:#c62828}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1316;--card:#161d21;--ink:#e8edf0;--mut:#94a1a8;--line:#243037;--pri:#4fb3b8;--ok:#3ccf82;--bad:#ff7a7a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 'IBM Plex Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-tap-highlight-color:transparent}
+header{background:var(--card);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:3}
+.tile{width:36px;height:36px;border-radius:10px;background:var(--pri);color:#fff;display:grid;place-items:center;font-weight:700}
+header small{display:block;font-size:11px;letter-spacing:.1em;color:var(--mut);font-weight:600}header b{font-size:18px}header .sp{flex:1}#who{color:var(--mut);font-size:13px;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+main{max-width:560px;margin:0 auto;padding:14px 16px 40px}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+.cam{position:relative;border-radius:14px;overflow:hidden;background:#000;aspect-ratio:4/3}.cam video{width:100%;height:100%;object-fit:cover;display:block}
+.aim{position:absolute;left:8%;right:8%;top:32%;bottom:32%;border:3px solid rgba(255,255,255,.9);border-radius:10px;box-shadow:0 0 0 999px rgba(0,0,0,.35)}.aim::after{content:"";position:absolute;left:4%;right:4%;top:50%;height:2px;background:#ff5252;box-shadow:0 0 8px #ff5252}
+.hint{color:var(--mut);font-size:13px;margin:8px 2px 12px}.btn{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:13px 16px;font:inherit;font-weight:600;cursor:pointer}.btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}.btn:disabled{opacity:.5}
+.inp{width:100%;border:1px solid var(--line);border-radius:12px;padding:14px;font:inherit;font-size:18px;text-align:center;letter-spacing:.04em;background:var(--card);color:var(--ink)}
+.row{display:flex;gap:8px;margin-top:10px}.mut{color:var(--mut);font-size:13px}.kp{font-weight:700;font-size:17px}.q{font-size:44px;font-weight:800;line-height:1.1;margin:6px 0}
+#ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-end;justify-content:center;z-index:9}#ov.on{display:flex}#ov .sheet{background:var(--card);width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));text-align:center}
+.ok{width:64px;height:64px;border-radius:50%;background:var(--ok);color:#fff;display:grid;place-items:center;font-size:36px;margin:0 auto 10px}.bad b.t{color:var(--bad);font-size:18px}
+a.btn{display:block;text-decoration:none;text-align:center}.lbl{font-size:11px;letter-spacing:.08em;color:var(--mut);font-weight:600;text-transform:uppercase;margin:14px 2px 6px}
+</style></head><body>
+<header><div class="tile">P</div><div><small>PRODUKSI</small><b>Scan KC</b></div><span class="sp"></span><span id="who"></span></header>
+<main id="main"></main>
+<div id="ov"><div class="sheet" id="sh"></div></div>
+<script>
+/* ============================================================================
+ * scan.html  -  halaman scanner kamera (statis, di-hosting di luar Apps Script)
+ * KENAPA     : iframe Apps Script memblokir kamera ("Permission denied"). Halaman ini berdiri sendiri (HTTPS top-level),
+ *              membuka kamera sendiri, lalu memanggil Web App Produksi lewat fetch (doPost) dengan token sesi.
+ * ALUR       : Produksi (layar Scan) -> "Scan dengan kamera" -> tiket sekali pakai di #hash -> halaman ini menukar tiket
+ *              jadi token sesi (disimpan di browser, 12 jam) -> kamera membaca barcode Code128 KC -> cek -> konfirmasi -> selesai.
+ * PEMBACA    : decoder Code128 buatan sendiri (tanpa pustaka luar, bekerja di semua browser); BarcodeDetector dipakai bila ada.
+ * PERAWATAN  : tidak ada konfigurasi di file ini. API & URL Login dibawa lewat tiket (#a=, #l=).
+ * KEAMANAN   : doPost hanya melayani 3 aksi (tukar, cek, selesai); aturan "hanya worker terjadwal" tetap dijaga server.
+ * ========================================================================== */
+/*DEC-START*/
+var C128W = ['212222','222122','222221','121223','121322','131222','122213','122312','132212','221213','221312','231212','112232','122132','122231','113222','123122','123221','223211','221132','221231','213212','223112','312131','311222','321122','321221','312212','322112','322211','212123','212321','232121','111323','131123','131321','112313','132113','132311','211313','231113','231311','112133','112331','132131','113123','113321','133121','313121','211331','231131','213113','213311','213131','311123','311321','331121','312113','312311','332111','314111','221411','431111','111224','111422','121124','121421','141122','141221','112214','112412','122114','122411','142112','142211','241211','221114','413111','241112','134111','111242','121142','121241','114212','124112','124211','411212','421112','421211','212141','214121','412121','111143','111341','131141','114113','114311','411113','411311','113141','114131','311141','411131','211412','211214','211232','2331112'];
+var C128P = C128W.map(function (s) { return s.split('').map(Number); });
+function dec_runs_(g, frac) { // deret panjang run (pecahan piksel, dari titik silang ambang) + warna tiap run
+  // ambang adaptif = titik antara gelap & terang setempat (min/max per blok 8 px, jendela ±~6% lebar) -> tahan buram, redup, bayangan
+  var n = g.length, B = 8, nb = Math.ceil(n / B), lo = new Float32Array(nb), hi = new Float32Array(nb), i, j;
+  for (j = 0; j < nb; j++) { var mn = 1e9, mx = -1e9; for (i = j * B; i < Math.min(n, j * B + B); i++) { if (g[i] < mn) mn = g[i]; if (g[i] > mx) mx = g[i]; } lo[j] = mn; hi[j] = mx; }
+  var wb = Math.max(2, Math.round(n / 16 / B)), tl = new Float32Array(nb), th = new Float32Array(nb);
+  for (j = 0; j < nb; j++) { var a = Math.max(0, j - wb), z = Math.min(nb - 1, j + wb), l = 1e9, hh = -1e9; for (i = a; i <= z; i++) { if (lo[i] < l) l = lo[i]; if (hi[i] > hh) hh = hi[i]; } tl[j] = l; th[j] = hh; }
+  var lens = [], dark = [], prevX = 0, prevV = 0, prevD = -1;
+  for (i = 0; i < n; i++) {
+    var q = (i / B) | 0, flat = th[q] - tl[q] < 25, v = flat ? 1 : g[i] - (tl[q] + (th[q] - tl[q]) * frac), d = v < 0 ? 1 : 0;
+    if (i === 0) { prevD = d; prevV = v; prevX = 0; continue; }
+    if (d !== prevD) { var x = (i - 1) + (prevV === v ? 0 : prevV / (prevV - v)); lens.push(x - prevX); dark.push(prevD); prevX = x; prevD = d; }
+    prevV = v;
+  }
+  lens.push(n - prevX); dark.push(prevD);
+  return { lens: lens, dark: dark };
+}
+function dec_err_(rl, i, p, n, u) { // selisih ukuran vs pola, memakai jumlah pasangan elemen (tepi-ke-tepi sejenis) agar kebal bias tebal/tipis akibat buram
+  var e = 0, r = 0, k; for (k = 0; k < n - 1; k++) e += Math.abs((rl[i + k] + rl[i + k + 1]) / u - (p[k] + p[k + 1]));
+  for (k = 0; k < n; k++) r += Math.abs(rl[i + k] / u - p[k]);
+  return (e * 1.2 + r) / 2; // gabungan: ukuran per elemen + pasangan
+}
+function dec_match_(rl, i, n) { // cocokkan n elemen dari i ke pola terdekat; {code, err, margin}
+  var s = 0, k; for (k = 0; k < n; k++) s += rl[i + k];
+  var u = s / (n === 6 ? 11 : 13), best = -1, be = 1e9, se = 1e9;
+  for (var c = 0; c < 107; c++) {
+    var p = C128P[c]; if ((n === 6) !== (p.length === 6)) continue;
+    var e = dec_err_(rl, i, p, n, u);
+    if (e < be) { se = be; be = e; best = c; } else if (e < se) se = e;
+  }
+  return { code: best, err: be, margin: se - be };
+}
+function dec_from_(rl, start) { // baca Code128 set B dari run 'start' (batang); teks atau null
+  if (start + 6 > rl.length) return null;
+  var s0 = dec_match_(rl, start, 6); if (s0.code !== 104 || s0.err > 2.0) return null;
+  var vals = [104], i = start + 6;
+  while (vals.length < 40) {
+    if (i + 7 <= rl.length) { var st = dec_match_(rl, i, 7); if (st.code === 106 && st.err <= 2.6) break; }
+    if (i + 6 > rl.length) return null;
+    var m = dec_match_(rl, i, 6); if (m.code < 0 || m.code > 105 || m.err > 2.0) return null; // tanpa batas margin: checksum + format KC menyaring salah baca
+    vals.push(m.code); i += 6;
+  }
+  if (vals.length < 4) return null;
+  var sum = vals[0], k; for (k = 1; k < vals.length - 1; k++) sum += vals[k] * k;
+  if (sum % 103 !== vals[vals.length - 1]) return null;
+  var txt = ''; for (k = 1; k < vals.length - 1; k++) { if (vals[k] > 94) return null; txt += String.fromCharCode(vals[k] + 32); }
+  return txt;
+}
+var DEC_CFG = [0.5, 0.42, 0.58]; // posisi ambang antara gelap-terang yang dicoba berurutan
+function dec_line_(g) { // satu garis piksel keabuan -> teks atau null
+  for (var c = 0; c < DEC_CFG.length; c++) { var t = dec_line1_(g, DEC_CFG[c]); if (t) return t; }
+  return null;
+}
+function dec_line1_(g, thr) {
+  var r = dec_runs_(g, thr), pass, i;
+  for (pass = 0; pass < 2; pass++) {
+    var lens = pass ? r.lens.slice().reverse() : r.lens, dark = pass ? r.dark.slice().reverse() : r.dark;
+    for (i = 0; i + 13 <= lens.length; i++) {
+      if (!dark[i]) continue;
+      var s = 0, k; for (k = 0; k < 6; k++) s += lens[i + k]; if (s < 11) continue;
+      var u = s / 11, e = dec_err_(lens, i, C128P[104], 6, u), p;
+      if (e > 2.2) continue; // saring cepat sebelum pencocokan penuh
+      var t = dec_from_(lens, i); if (t) return t;
+    }
+  }
+  return null;
+}
+/** Cari barcode di bingkai: data = Uint8 RGBA (lebar w, tinggi h). Pindai garis horizontal & vertikal di area tengah. */
+function dec_frame_(data, w, h, re) {
+  var gray = new Float32Array(w * h), i;
+  for (i = 0; i < w * h; i++) gray[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114;
+  var line = new Float32Array(Math.max(w, h)), f, t, x, y;
+  for (f = 0.2; f <= 0.801; f += 0.05) {
+    y = Math.min(h - 2, Math.max(1, Math.round(h * f)));
+    var gh = new Float32Array(w); for (x = 0; x < w; x++) gh[x] = (gray[(y - 1) * w + x] + gray[y * w + x] + gray[(y + 1) * w + x]) / 3;
+    t = dec_line_(gh); if (t && re.test(t)) return t;
+    x = Math.min(w - 2, Math.max(1, Math.round(w * f)));
+    var gv = new Float32Array(h); for (y = 0; y < h; y++) gv[y] = (gray[y * w + x - 1] + gray[y * w + x] + gray[y * w + x + 1]) / 3;
+    t = dec_line_(gv); if (t && re.test(t)) return t;
+  }
+  return null;
+}
+/*DEC-END*/
+var KC_RE = /^KC-\d{6}-\d{3,}$/, KEY = 'prodScan', ST = null, busy = false, last = { kc: '', t: 0 }, stream = null, timer = 0, bd = null, recent = [];
+var $ = function (id) { return document.getElementById(id); };
+var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+function load() { try { var s = JSON.parse(localStorage.getItem(KEY) || 'null'); if (s && s.token && Number(s.token.split('.')[0]) > Date.now() + 60000) return s; } catch (e) {} return null; }
+function save(s) { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {} }
+function api(a, body) {
+  return fetch(ST.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ a: a }, body)), redirect: 'follow' })
+    .then(function (r) { return r.json(); }, function () { throw new Error('Koneksi bermasalah. Cek internet lalu coba lagi.'); })
+    .then(function (j) { if (!j || !j.ok) throw new Error((j && j.error) || 'Gagal memproses.'); return j; });
+}
+function boot() {
+  var h = location.hash.replace(/^#/, ''), p = {}; h.split('&').forEach(function (kv) { var i = kv.indexOf('='); if (i > 0) p[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1)); });
+  var old = load();
+  if (p.t) { // tiket baru dari Produksi
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    var apiUrl = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_\-]+\/exec$/.test(p.a || '') ? p.a : (old && old.api) || '';
+    if (!apiUrl) { gagal('Link tidak lengkap. Buka lagi dari menu Scan di Produksi.'); return; }
+    ST = { api: apiUrl, login: p.l || (old && old.login) || '', token: '' };
+    $('main').innerHTML = '<div class="card mut">Masuk…</div>';
+    api('tukar', { t: p.t }).then(function (j) { ST.token = j.token; ST.nama = j.nama; ST.email = j.email; save(ST); mulai(); }).catch(function (e) { gagal(e.message); });
+  } else if (old) { ST = old; mulai(); }
+  else gagal('Belum masuk. Buka aplikasi Produksi, pilih menu Scan, lalu ketuk "Scan dengan kamera".');
+}
+function gagal(msg) {
+  var lk = (ST && ST.login) || (load() || {}).login || '';
+  $('main').innerHTML = '<div class="card bad"><b class="t">Belum bisa dipakai</b><div style="margin:8px 0 14px">' + esc(msg) + '</div>' + (lk ? '<a class="btn pri" href="' + esc(lk) + '">Masuk lagi</a>' : '') + '</div>';
+}
+function mulai() {
+  $('who').textContent = (ST.nama || '') + (ST.email ? ' · ' + ST.email : '');
+  $('main').innerHTML = '<div class="cam"><video id="v" playsinline muted autoplay></video><div class="aim"></div></div><div class="hint">Arahkan ke barcode di label, isi kotak putih. Kalau gelap, dekatkan ke cahaya.</div>' +
+    '<div class="card"><input class="inp" id="man" placeholder="Atau ketik kode KC" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key===\'Enter\')manual()"><div class="row"><button class="btn pri" style="flex:1" onclick="manual()">Cek KC</button></div></div><div id="rc"></div>';
+  rc(); kamera();
+}
+function rc() { $('rc').innerHTML = recent.length ? '<div class="lbl">Selesai sesi ini</div>' + recent.map(function (r) { return '<div class="card" style="padding:12px"><b>' + esc(r.kc) + '</b> <span class="mut">· ' + esc(r.jam) + '</span><div class="mut">' + esc(r.nama) + ' · ' + r.qty + ' pcs</div></div>'; }).join('') : ''; }
+function kamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('main').querySelector('.hint').textContent = 'Kamera tidak tersedia di browser ini. Ketik kode KC di bawah.'; return; }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }).then(function (s) {
+    stream = s; var v = $('v'); v.srcObject = s; v.play();
+    try { var tr = s.getVideoTracks()[0], cap = tr.getCapabilities ? tr.getCapabilities() : {}; if (cap.focusMode && cap.focusMode.indexOf('continuous') >= 0) tr.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
+    try { if ('BarcodeDetector' in window) bd = new BarcodeDetector({ formats: ['code_128'] }); } catch (e) {}
+    timer = setInterval(tick, 140);
+  }).catch(function (e) { $('main').querySelector('.hint').innerHTML = 'Kamera tidak bisa dibuka (' + esc((e && e.name) || e) + '). Izinkan akses kamera di pengaturan situs, lalu muat ulang. Sementara, ketik kode KC di bawah.'; });
+}
+var cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
+function tick() {
+  var v = $('v'); if (busy || !v || v.readyState < 2 || !v.videoWidth) return;
+  var w = Math.min(1280, v.videoWidth), h = Math.round(w * v.videoHeight / v.videoWidth), bh = Math.round(h * 0.6), by = Math.round((h - bh) / 2);
+  cv.width = w; cv.height = bh; cx.drawImage(v, 0, by * v.videoHeight / h, v.videoWidth, bh * v.videoHeight / h, 0, 0, w, bh);
+  var done = function (kc) { if (kc && KC_RE.test(kc)) { var n = Date.now(); if (kc === last.kc && n - last.t < 2500) return; hasil(kc); } };
+  var t = null; try { t = dec_frame_(cx.getImageData(0, 0, w, bh).data, w, bh, KC_RE); } catch (e) {}
+  if (t) { done(t); return; }
+  if (bd) bd.detect(cv).then(function (r) { if (r && r.length) done(String(r[0].rawValue || '').trim().toUpperCase()); }).catch(function () {});
+}
+function manual() { var v = ($('man').value || '').trim().toUpperCase(); if (!KC_RE.test(v)) { toast('Bukan kode KC'); return; } $('man').value = ''; hasil(v); }
+function toast(m) { var s = $('sh'); s.innerHTML = '<div class="bad"><b class="t">' + esc(m) + '</b></div>'; $('ov').className = 'on'; setTimeout(function () { if (!busy) $('ov').className = ''; }, 1400); }
+function tutup() { $('ov').className = ''; busy = false; }
+function hasil(kc) {
+  if (busy) return; busy = true; if (navigator.vibrate) try { navigator.vibrate(60); } catch (e) {}
+  api('cek', { token: ST.token, kc: kc }).then(function (r) {
+    last = { kc: kc, t: Date.now() };
+    if (r.sudah) { tampil(true, kc + ' sudah tercatat selesai.'); return; }
+    $('sh').innerHTML = '<div class="mut" style="text-align:left;letter-spacing:.08em;font-weight:600">KONFIRMASI</div><div class="kp" style="text-align:left;margin-top:4px">' + esc(r.kc) + '</div><div style="text-align:left;margin-top:4px">' + esc(r.nama) + '</div><div class="q" style="text-align:left">' + r.qty + ' pcs</div>' +
+      '<div class="mut" style="text-align:left">' + esc(r.lapak) + ' · ' + esc(r.shift) + ' · rekan: ' + esc(r.rekan) + '</div><div class="mut" style="text-align:left;margin-top:10px">Tekan Selesai hanya jika semua ' + r.qty + ' pcs sudah selesai dipotong.</div>' +
+      '<div class="row"><button class="btn" style="flex:1" onclick="last.t=Date.now();tutup()">Batal</button><button class="btn pri" style="flex:2" id="go">Selesai Cutting</button></div>';
+    $('ov').className = 'on';
+    $('go').onclick = function () {
+      $('go').disabled = true;
+      api('selesai', { token: ST.token, kc: kc }).then(function (x) { if (!x.ulang) recent.unshift({ kc: x.kc, nama: x.nama, qty: x.qty, jam: new Date().toTimeString().slice(0, 5) }); recent = recent.slice(0, 5); rc(); tampil(true, x.kc + ' selesai. Terima kasih!'); }).catch(function (e) { tampil(false, e.message); });
+    };
+  }).catch(function (e) { last = { kc: kc, t: Date.now() }; tampil(false, e.message, /Token|Sesi|masuk lagi/i.test(e.message)); });
+}
+function tampil(ok, msg, relogin) {
+  $('sh').innerHTML = (ok ? '<div class="ok">✓</div>' : '<div class="bad"><b class="t">Tidak bisa diproses</b></div>') + '<div style="margin:8px 0 14px;font-size:' + (ok ? 18 : 16) + 'px">' + esc(msg) + '</div>' +
+    (relogin && ST.login ? '<a class="btn pri" href="' + esc(ST.login) + '">Masuk lagi</a>' : '<button class="btn pri" style="width:100%" onclick="tutup()">Scan berikutnya</button>');
+  $('ov').className = 'on'; if (ok) setTimeout(function () { if ($('ov').className === 'on' && !$('go')) tutup(); }, 2500);
+}
+if (!window.__NOBOOT) boot();
+</script></body></html>

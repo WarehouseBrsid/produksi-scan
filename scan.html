@@ -19,8 +19,17 @@ main{max-width:560px;margin:0 auto;padding:14px 16px 40px}.card{background:var(-
 #ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-end;justify-content:center;z-index:9}#ov.on{display:flex}#ov .sheet{background:var(--card);width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));text-align:center}
 .ok{width:64px;height:64px;border-radius:50%;background:var(--ok);color:#fff;display:grid;place-items:center;font-size:36px;margin:0 auto 10px}.bad b.t{color:var(--bad);font-size:18px}
 a.btn{display:block;text-decoration:none;text-align:center}.lbl{font-size:11px;letter-spacing:.08em;color:var(--mut);font-weight:600;text-transform:uppercase;margin:14px 2px 6px}
+.tabs{display:flex;gap:6px;margin:0 0 10px}.tabs .chip{flex:1;text-align:center}
+.cart .it{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;background:var(--card)}
+.cart .it .x{appearance:none;border:0;background:none;color:var(--mut);font-size:20px;cursor:pointer;padding:4px 8px}
+.tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#0f63681a;color:var(--pri)}.tag.s{background:#a864001f;color:#a86400}
+#cbar{position:sticky;bottom:0;padding:10px 0 calc(10px + env(safe-area-inset-bottom));background:var(--bg)}
+.sheetx{max-height:86vh;overflow:auto;text-align:left}.kcbox{border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0}
+.prt{display:flex;gap:8px;align-items:center;margin-top:6px}.prt label{flex:1;font-size:14px}.prt input{width:84px;text-align:center;font-size:17px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
+.pv{font-size:13px;margin-top:6px;color:var(--mut)}.pv b{color:var(--ink)}.pv .k{color:var(--bad)}
+.opt{display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid var(--line);border-radius:10px;margin-top:6px;font-size:14px}
 </style></head><body>
-<header><div class="tile"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5v14M3 15h18v4M11 15v-4.5h6.5A3.5 3.5 0 0 1 21 14v1"/><rect x="5.2" y="11" width="4.4" height="3" rx="1.2"/></svg></div><div><small>PRODUKSI · QR v3</small><b>Scan KC</b></div><span class="sp"></span><span id="who"></span></header>
+<header><div class="tile"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5v14M3 15h18v4M11 15v-4.5h6.5A3.5 3.5 0 0 1 21 14v1"/><rect x="5.2" y="11" width="4.4" height="3" rx="1.2"/></svg></div><div><small>PRODUKSI · QR v4</small><b>Scan KC</b></div><span class="sp"></span><span id="who"></span></header>
 <main id="main"></main>
 <div id="ov"><div class="sheet" id="sh"></div></div>
 <script>
@@ -28,6 +37,7 @@ a.btn{display:block;text-decoration:none;text-align:center}.lbl{font-size:11px;l
  * scan.html  -  halaman scanner kamera (statis, di-hosting di luar Apps Script)
  * KENAPA     : iframe Apps Script memblokir kamera ("Permission denied"). Halaman ini berdiri sendiri (HTTPS top-level),
  *              membuka kamera sendiri, lalu memanggil Web App Produksi lewat fetch (doPost) dengan token sesi.
+ * MODE       : Cutting (scan label KC satu-satu) & Penjahit (scan Surat Jalan ke keranjang: terima / selesai jahit per komponen).
  * ALUR       : Produksi (layar Scan) -> "Scan dengan kamera" -> tiket sekali pakai di #hash -> halaman ini menukar tiket
  *              jadi token sesi (disimpan di browser, 12 jam) -> kamera membaca barcode Code128 KC -> cek -> konfirmasi -> selesai.
  * PEMBACA    : QR (utama, label berisi link ?kc=KC-...) + Code128 (label lama). Pembaca buatan sendiri tanpa pustaka luar;
@@ -375,6 +385,36 @@ function qd_decode_(gray, w, h) {
   return null;
 }
 /*QRDEC-END*/
+/*BENTUK-START*/
+/* Salinan PERSIS komponen_ & bentuk_ dari Penjahit.gs (pratinjau hasil di HP = hitungan server). Ubah keduanya bersamaan. */
+/** Komponen sebuah nama barang. */
+function komponen_(nama) {
+  var n = String(nama || '').trim().toUpperCase(), m = /^([A-Z]+)((?:-\d+)*)_(.+)$/.exec(n);
+  if (!m) return { kat: '', motif: '', parts: [{ key: 'UTUH', label: 'Jadi', nama: n, per: 1 }] };
+  var kat = m[1], uk = m[2], motif = m[3];
+  if (kat === 'SPREI') {
+    var lebar = Number(uk.split('-')[1] || 0), a = lebar >= 140 ? 2 : 1, b = lebar >= 160 ? 2 : 1;
+    return { kat: kat, motif: motif, parts: [{ key: 'SPSAJA', label: 'Sprei saja', nama: 'SPSAJA' + uk + '_' + motif, per: 1 },
+      { key: 'SARBAN', label: 'Sarung bantal', nama: 'SARBAN_' + motif, per: a }, { key: 'SARGUL', label: 'Sarung guling', nama: 'SARGUL_' + motif, per: b }] };
+  }
+  if (kat === 'SET') return { kat: kat, motif: motif, parts: [{ key: 'SARBAN', label: 'Sarung bantal', nama: 'SARBAN_' + motif, per: 1 }, { key: 'SARGUL', label: 'Sarung guling', nama: 'SARGUL_' + motif, per: 1 }] };
+  return { kat: kat, motif: motif, parts: [{ key: 'UTUH', label: 'Jadi', nama: n, per: 1 }] };
+}
+/** Jumlah komponen yang dikirim -> barang yang terbentuk [{nama, qty, jenis JADI|SISA}]. */
+function bentuk_(nama, cnt) {
+  var k = komponen_(nama), P = k.parts, out = [], n = String(nama).trim().toUpperCase();
+  if (P[0].key === 'UTUH') { if (cnt.UTUH) out.push({ nama: n, qty: cnt.UTUH, jenis: 'JADI' }); return out; }
+  var full = Math.min.apply(null, P.map(function (p) { return Math.floor((cnt[p.key] || 0) / p.per); })), left = {};
+  if (full) out.push({ nama: n, qty: full, jenis: 'JADI' });
+  P.forEach(function (p) { left[p.key] = (cnt[p.key] || 0) - full * p.per; });
+  if (left.SPSAJA) out.push({ nama: P[0].nama, qty: left.SPSAJA, jenis: 'SISA' });
+  var set = Math.min(left.SARBAN || 0, left.SARGUL || 0);
+  if (set) out.push({ nama: 'SET_' + k.motif, qty: set, jenis: 'SISA' });
+  if (left.SARBAN - set) out.push({ nama: 'SARBAN_' + k.motif, qty: left.SARBAN - set, jenis: 'SISA' });
+  if (left.SARGUL - set) out.push({ nama: 'SARGUL_' + k.motif, qty: left.SARGUL - set, jenis: 'SISA' });
+  return out;
+}
+/*BENTUK-END*/
 var KC_RE = /^KC-\d{6}-\d{3,}$/, KEY = 'prodScan', ST = null, busy = false, last = { kc: '', t: 0 }, stream = null, timer = 0, bd = null, recent = [];
 var $ = function (id) { return document.getElementById(id); };
 var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
@@ -394,7 +434,7 @@ function boot() {
     if (!apiUrl) { gagal('Link tidak lengkap. Buka lagi dari menu Scan di Produksi.'); return; }
     ST = { api: apiUrl, login: p.l || (old && old.login) || '', token: '' };
     $('main').innerHTML = '<div class="card mut">Masuk…</div>';
-    api('tukar', { t: p.t }).then(function (j) { ST.token = j.token; ST.nama = j.nama; ST.email = j.email; save(ST); mulai(); }).catch(function (e) { gagal(e.message); });
+    api('tukar', { t: p.t }).then(function (j) { ST.token = j.token; ST.nama = j.nama; ST.email = j.email; ST.roles = j.roles || []; save(ST); mulai(); }).catch(function (e) { gagal(e.message); });
   } else if (old) { ST = old; mulai(); }
   else gagal('Belum masuk. Buka aplikasi Produksi, pilih menu Scan, lalu ketuk "Scan dengan kamera".');
 }
@@ -402,18 +442,40 @@ function gagal(msg) {
   var lk = (ST && ST.login) || (load() || {}).login || '';
   $('main').innerHTML = '<div class="card bad"><b class="t">Belum bisa dipakai</b><div style="margin:8px 0 14px">' + esc(msg) + '</div>' + (lk ? '<a class="btn pri" href="' + esc(lk) + '">Masuk lagi</a>' : '') + '</div>';
 }
+/* MODE: 'cut' = Selesai Cutting (scan label KC satu-satu), 'jht' = Penjahit (scan Surat Jalan ke keranjang, proses sekali).
+ * Mode yang tampil mengikuti peran akun (dari tukar tiket); server tetap memeriksa hak setiap aksi. */
+var MODE = 'cut', CART = [], MKEY = 'prodScanMode';
+function modes_() {
+  var r = (ST && ST.roles) || [], adm = r.indexOf('ADMIN') >= 0, m = [];
+  if (adm || r.indexOf('WORKER') >= 0 || !r.length) m.push('cut');
+  if (adm || ['PACKING', 'ADMPROD', 'JAHIT'].some(function (x) { return r.indexOf(x) >= 0; })) m.push('jht');
+  return m.length ? m : ['cut'];
+}
+function playV_(v) { try { var pr = v.play(); if (pr && pr.catch) pr.catch(function () {}); } catch (e) {} }
+function setMode(m) { MODE = m; try { localStorage.setItem(MKEY, m); } catch (e) {} mulai(); }
 function mulai() {
+  var ms = modes_(), sv = ''; try { sv = localStorage.getItem(MKEY) || ''; } catch (e) {}
+  if (ms.indexOf(MODE) < 0 || (sv && ms.indexOf(sv) >= 0 && MODE !== sv)) MODE = ms.indexOf(sv) >= 0 ? sv : ms[0];
+  var jht = MODE === 'jht';
   $('who').textContent = (ST.nama || '') + (ST.email ? ' · ' + ST.email : '');
-  $('main').innerHTML = '<div class="cam" id="cam"><video id="v" playsinline muted autoplay></video><div class="aim"></div><div id="fk"></div></div><div class="ctl" id="ctl"></div>' +
-    '<div class="hint" id="hint">Arahkan ke QR di label sampai masuk kotak. Jarak ±15–20 cm. Kalau buram: coba zoom 2×, ketuk layar untuk fokus, atau ganti kamera.</div>' +
+  document.querySelector('header b').textContent = jht ? 'Scan Surat Jalan' : 'Scan KC';
+  $('main').innerHTML = (ms.length > 1 ? '<div class="tabs"><button class="chip' + (jht ? '' : ' on') + '" onclick="setMode(\'cut\')">Cutting</button><button class="chip' + (jht ? ' on' : '') + '" onclick="setMode(\'jht\')">Penjahit</button></div>' : '') +
+    '<div class="cam" id="cam"><video id="v" playsinline muted autoplay></video><div class="aim"></div><div id="fk"></div></div><div class="ctl" id="ctl"></div>' +
+    '<div class="hint" id="hint">' + (jht ? 'Scan QR di Surat Jalan satu per satu; semua masuk keranjang. Setelah selesai, tekan <b>Proses keranjang</b>.' : 'Arahkan ke QR di label sampai masuk kotak.') + ' Jarak ±15–20 cm. Kalau buram: coba zoom 2×, ketuk layar untuk fokus, atau ganti kamera.</div>' +
     '<label class="btn pri" style="display:block;text-align:center;margin-bottom:12px">Foto QR (pakai kamera HP)<input type="file" id="foto" accept="image/*" capture="environment" style="display:none" onchange="foto_(this)"></label>' +
-    '<div class="card"><input class="inp" id="man" placeholder="Atau ketik kode KC" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key===\'Enter\')manual()"><div class="row"><button class="btn pri" style="flex:1" onclick="manual()">Cek KC</button></div></div><div id="rc"></div>' +
+    '<div class="card"><input class="inp" id="man" placeholder="' + (jht ? 'Atau ketik kode IDS, mis. IDS/191126-0001' : 'Atau ketik kode KC') + '" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key===\'Enter\')manual()"><div class="row"><button class="btn pri" style="flex:1" onclick="manual()">' + (jht ? 'Tambah ke keranjang' : 'Cek KC') + '</button></div></div>' +
+    (jht ? '<div id="cart" class="cart"></div><div id="cbar"></div>' : '<div id="rc"></div>') +
     '<div class="mut" id="info" style="font-size:11px;margin-top:6px"></div>';
-  rc(); kamera();
+  if (jht) drawCart(); else rc();
+  if (!stream) kamera(); else { var v = $('v'); v.srcObject = stream; playV_(v); kontrol_(); info_(); $('cam').onclick = fokus_; }
 }
 function rc() { $('rc').innerHTML = recent.length ? '<div class="lbl">Selesai sesi ini</div>' + recent.map(function (r) { return '<div class="card" style="padding:12px"><b>' + esc(r.kc) + '</b> <span class="mut">· ' + esc(r.jam) + '</span><div class="mut">' + esc(r.nama) + ' · ' + r.qty + ' pcs</div></div>'; }).join('') : ''; }
 /** Ambil kode dari hasil pindai: QR label berisi link ...?kc=KC-..., barcode garis berisi KC langsung. */
 function kode_(txt) { var m = /KC-\d{6}-\d{3,}/i.exec(String(txt || '')); return m ? m[0].toUpperCase() : ''; }
+function kodeIds_(txt) { var m = /IDS\/\d{6}-\d{4,}/i.exec(String(txt || '')); return m ? m[0].toUpperCase() : ''; }
+/** Kode sesuai mode: KC (Cutting) atau IDS (Penjahit). */
+function kodeMode_(txt) { return MODE === 'jht' ? kodeIds_(txt) : kode_(txt); }
+function terima_(k) { if (MODE === 'jht') jhtAdd(k); else hasil(k); }
 var track = null, cap = {}, backs = [], CAMKEY = 'prodCam';
 function camSaved_() { try { return localStorage.getItem(CAMKEY) || ''; } catch (e) { return ''; } }
 /** Kamera belakang diurutkan: kamera utama biasanya nomor terkecil ("camera2 0, facing back"). Kamera wide/makro/depth sering tidak bisa fokus dekat. */
@@ -430,7 +492,7 @@ function kamera(devId) {
   var id = devId || camSaved_(), vc = { width: { ideal: 1920 }, height: { ideal: 1080 } };
   if (id) vc.deviceId = { exact: id }; else vc.facingMode = { ideal: 'environment' };
   navigator.mediaDevices.getUserMedia({ video: vc, audio: false }).then(function (s) {
-    stream = s; var v = $('v'); v.srcObject = s; v.play();
+    stream = s; var v = $('v'); v.srcObject = s; playV_(v);
     track = s.getVideoTracks()[0]; try { cap = track.getCapabilities ? track.getCapabilities() : {}; } catch (e) { cap = {}; }
     atur_({ focusMode: 'continuous' }, cap.focusMode && cap.focusMode.indexOf('continuous') >= 0);
     $('cam').onclick = fokus_;
@@ -473,11 +535,11 @@ function foto_(inp) {
       var s = Math.min(1, mx / Math.max(im.width, im.height)), w = Math.round(im.width * s), h = Math.round(im.height * s), c = document.createElement('canvas'); c.width = w; c.height = h;
       var x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(im, 0, 0, w, h);
       var d = x.getImageData(0, 0, w, h).data, g = new Float32Array(w * h); for (var i = 0; i < g.length; i++) g[i] = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114;
-      var t = qd_decode_(g, w, h); if (!kode_(t)) t = dec_frame_(d, w, h, KC_RE);
-      if (kode_(t)) { hasilTeks = t; return true; } return false;
+      var t = qd_decode_(g, w, h); if (!kodeMode_(t) && MODE !== 'jht') t = dec_frame_(d, w, h, KC_RE);
+      if (kodeMode_(t)) { hasilTeks = t; return true; } return false;
     });
-    if (hasilTeks) { hasil(kode_(hasilTeks)); return; }
-    if (bd) bd.detect(im).then(function (r) { var k = r && r.length && kode_(r[0].rawValue); if (k) hasil(k); else toast('QR tidak terbaca di foto. Foto lebih dekat & tajam.'); }).catch(function () { toast('QR tidak terbaca di foto. Foto lebih dekat & tajam.'); });
+    if (hasilTeks) { terima_(kodeMode_(hasilTeks)); return; }
+    if (bd) bd.detect(im).then(function (r) { var k = r && r.length && kodeMode_(r[0].rawValue); if (k) terima_(k); else toast('QR tidak terbaca di foto. Foto lebih dekat & tajam.'); }).catch(function () { toast('QR tidak terbaca di foto. Foto lebih dekat & tajam.'); });
     else toast('QR tidak terbaca di foto. Foto lebih dekat & tajam.');
   };
   im.onerror = function () { URL.revokeObjectURL(url); toast('Foto tidak bisa dibuka.'); };
@@ -512,16 +574,20 @@ function tick() {
   var v = $('v'); if (busy || !v || v.readyState < 2 || !v.videoWidth) return;
   var w = Math.min(960, v.videoWidth), h = Math.round(w * v.videoHeight / v.videoWidth);
   cv.width = w; cv.height = h; cx.drawImage(v, 0, 0, w, h);
-  var done = function (txt) { var kc = kode_(txt); if (!kc || busy) return; var n = Date.now(); if (kc === last.kc && n - last.t < 2500) return; hasil(kc); };
+  var done = function (txt) { var kc = kodeMode_(txt); if (!kc || busy) return; var n = Date.now(); if (kc === last.kc && n - last.t < 2500) return; last = { kc: kc, t: n }; terima_(kc); };
   if (bd && !bdBusy) { bdBusy = true; bd.detect(cv).then(function (r) { bdBusy = false; if (r && r.length) done(r[0].rawValue); }).catch(function () { bdBusy = false; }); }
   try {
     var d = cx.getImageData(0, 0, w, h).data, g = new Float32Array(w * h);
     for (var i = 0; i < g.length; i++) g[i] = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114;
-    var t = qd_decode_(g, w, h); if (t && kode_(t)) { done(t); return; }
-    t = dec_frame_(d, w, h, KC_RE); if (t) done(t); // barcode garis (label lama) tetap terbaca
+    var t = qd_decode_(g, w, h); if (t && kodeMode_(t)) { done(t); return; }
+    if (MODE !== 'jht') { t = dec_frame_(d, w, h, KC_RE); if (t) done(t); } // barcode garis (label lama) tetap terbaca
   } catch (e) {}
 }
-function manual() { var v = ($('man').value || '').trim().toUpperCase(); if (!KC_RE.test(v)) { toast('Bukan kode KC'); return; } $('man').value = ''; hasil(v); }
+function manual() {
+  var v = ($('man').value || '').trim().toUpperCase();
+  if (MODE === 'jht') { var k = kodeIds_(v); if (!k) { toast('Bukan kode Surat Jalan (IDS)'); return; } $('man').value = ''; jhtAdd(k); return; }
+  if (!KC_RE.test(v)) { toast('Bukan kode KC'); return; } $('man').value = ''; hasil(v);
+}
 function toast(m) { var s = $('sh'); s.innerHTML = '<div class="bad"><b class="t">' + esc(m) + '</b></div>'; $('ov').className = 'on'; setTimeout(function () { if (!busy) $('ov').className = ''; }, 1400); }
 function tutup() { $('ov').className = ''; busy = false; }
 function hasil(kc) {
@@ -543,6 +609,83 @@ function tampil(ok, msg, relogin) {
   $('sh').innerHTML = (ok ? '<div class="ok">✓</div>' : '<div class="bad"><b class="t">Tidak bisa diproses</b></div>') + '<div style="margin:8px 0 14px;font-size:' + (ok ? 18 : 16) + 'px">' + esc(msg) + '</div>' +
     (relogin && ST.login ? '<a class="btn pri" href="' + esc(ST.login) + '">Masuk lagi</a>' : '<button class="btn pri" style="width:100%" onclick="tutup()">Scan berikutnya</button>');
   $('ov').className = 'on'; if (ok) setTimeout(function () { if ($('ov').className === 'on' && !$('go')) tutup(); }, 2500);
+}
+
+/* ---------- Mode Penjahit: keranjang Surat Jalan ----------
+ * Scan beberapa Surat Jalan -> masing-masing dicek server (jcek) -> masuk keranjang dengan aksinya:
+ *   TERIMA  : barang diterima penjahit (diproses sekaligus);
+ *   SELESAI : konfirmasi hasil per KC per komponen (sprei saja / sarban / sargul) + pilih kirim semua / sebagian.
+ * Pratinjau barang memakai bentuk_ yang sama dengan server. Tiap kiriman membawa ref unik (aman bila tombol ditekan 2x).
+ */
+function newRef_() { return 'WA-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); }
+function jhtAdd(ids) {
+  if (CART.some(function (c) { return c.d.ids === ids; })) { toast(ids + ' sudah di keranjang'); return; }
+  busy = true; if (navigator.vibrate) try { navigator.vibrate(60); } catch (e) {}
+  api('jcek', { token: ST.token, ids: ids }).then(function (r) {
+    busy = false;
+    if (!r.aksi) { toast(ids + ': ' + r.pesan); return; }
+    var c = { d: r, ref: newRef_(), final: true, cnt: {} };
+    r.items.forEach(function (it) { c.cnt[it.kc] = {}; it.parts.forEach(function (p) { c.cnt[it.kc][p.key] = p.max; }); });
+    CART.push(c); drawCart(); kilat_(ids + ' masuk keranjang');
+  }).catch(function (e) { busy = false; tampil(false, e.message, /Token|Sesi|masuk lagi/i.test(e.message)); });
+}
+function kilat_(m) { var h = $('hint'); if (!h) return; var o = h.innerHTML; h.innerHTML = '<b style="color:var(--ok)">✓ ' + esc(m) + '</b>'; setTimeout(function () { if ($('hint')) $('hint').innerHTML = o; }, 1500); }
+function drawCart() {
+  if (!$('cart')) return;
+  var n = CART.length;
+  $('cart').innerHTML = n ? '<div class="lbl">Keranjang (' + n + ')</div>' + CART.map(function (c, i) {
+    var d = c.d, pcs = d.items.reduce(function (a, it) { return a + it.qty; }, 0);
+    return '<div class="it"><div style="flex:1;min-width:0"><div><b>' + esc(d.ids) + '</b> <span class="tag' + (d.aksi === 'SELESAI' ? ' s' : '') + '">' + (d.aksi === 'TERIMA' ? 'Terima barang' : 'Selesai jahit · kiriman ' + d.ke) + '</span></div><div class="mut">' + esc(d.nama) + ' · ' + d.items.length + ' KC · ' + pcs + ' pcs</div></div><button class="x" aria-label="Hapus" onclick="CART.splice(' + i + ',1);drawCart()">×</button></div>';
+  }).join('') : '<div class="mut" style="padding:6px 2px">Keranjang kosong. Scan QR di Surat Jalan.</div>';
+  $('cbar').innerHTML = n ? '<button class="btn pri" style="width:100%" onclick="proses_()">Proses keranjang (' + n + ')</button>' : '';
+}
+function prevHtml_(it, cnt, final) {
+  var rows = bentuk_(it.nama, cnt), kur = final ? it.parts.map(function (p) { return { nama: p.nama, q: p.max - (cnt[p.key] || 0) }; }).filter(function (x) { return x.q > 0; }) : [];
+  return (rows.length ? rows.map(function (r) { return '<b>' + r.qty + '</b> ' + esc(r.nama); }).join(' + ') : '<b>0</b> barang') + (kur.length ? '<div class="k">Kurang: ' + kur.map(function (x) { return x.q + ' ' + esc(x.nama); }).join(', ') + '</div>' : '');
+}
+function proses_() {
+  var T = CART.filter(function (c) { return c.d.aksi === 'TERIMA'; }), S = CART.filter(function (c) { return c.d.aksi === 'SELESAI'; }), h = '';
+  if (T.length) h += '<div class="kp">Terima barang (' + T.length + ' Surat Jalan)</div><div class="mut">Barang sudah sampai di penjahit, Surat Jalan 3 lembar dipegang penjahit.</div>' + T.map(function (c) { return '<div class="kcbox"><b>' + esc(c.d.ids) + '</b> · ' + esc(c.d.nama) + '<div class="mut">' + c.d.items.map(function (it) { return esc(it.kc) + ' ' + esc(it.nama) + ' (' + it.qty + ')'; }).join('<br>') + '</div></div>'; }).join('') +
+    '<button class="btn pri" style="width:100%;margin:4px 0 14px" id="goT" onclick="kirimTerima_()">Terima ' + T.length + ' Surat Jalan</button>';
+  if (S.length) h += '<div class="kp">Selesai jahit (' + S.length + ' Surat Jalan)</div><div class="mut">Isi jumlah per bagian yang <b>dikirim sekarang</b>. Angka awal = semua sisa. Sistem membentuk SPREI lengkap, sisanya jadi SPSAJA / SET / SARBAN / SARGUL.</div>' + S.map(function (c) {
+    var i = CART.indexOf(c), d = c.d;
+    var opsi = d.bolehSebagian ? '<label class="opt"><input type="radio" name="f' + i + '" ' + (c.final ? 'checked' : '') + ' onchange="setFinal_(' + i + ',true)"><span><b>Semua selesai</b> · kirim lembar Putih + Kuning. Yang tidak terkirim dicatat kurang.</span></label><label class="opt"><input type="radio" name="f' + i + '" ' + (c.final ? '' : 'checked') + ' onchange="setFinal_(' + i + ',false)"><span><b>Sebagian</b> · kirim lembar Putih dulu; sisanya nanti dengan lembar Kuning (kiriman terakhir).</span></label>'
+      : '<div class="opt"><span><b>Kiriman terakhir</b> (lembar Kuning). Yang tidak terkirim dicatat kurang dan tidak diproduksi ulang.</span></div>';
+    return '<div class="kcbox"><div><b>' + esc(d.ids) + '</b> · ' + esc(d.nama) + ' · kiriman ' + d.ke + '</div>' + opsi + d.items.map(function (it) {
+      return '<div class="kcbox"><div><b>' + esc(it.kc) + '</b> · ' + it.qty + ' pcs</div><div class="mut" style="word-break:break-word">' + esc(it.nama) + '</div>' + it.parts.map(function (p) {
+        return '<div class="prt"><label>' + esc(p.label) + (p.per > 1 ? ' <span class="mut">(' + p.per + '/pcs)</span>' : '') + '<div class="mut" style="font-size:12px">sisa ' + p.max + (p.terkirim ? ' · sudah ' + p.terkirim : '') + '</div></label><input type="number" inputmode="numeric" min="0" max="' + p.max + '" value="' + (c.cnt[it.kc][p.key]) + '" data-i="' + i + '" data-kc="' + esc(it.kc) + '" data-k="' + p.key + '" oninput="setCnt_(this)"></div>';
+      }).join('') + '<div class="pv" id="pv' + i + '_' + esc(it.kc) + '">' + prevHtml_(it, c.cnt[it.kc], c.final || !d.bolehSebagian) + '</div></div>';
+    }).join('') + '<button class="btn" style="width:100%;margin-top:4px" onclick="penuh_(' + i + ')">Isi semua lengkap</button></div>';
+  }).join('') + '<button class="btn pri" style="width:100%;margin-top:8px" id="goS" onclick="kirimSelesai_()">Kirim hasil ' + S.length + ' Surat Jalan</button>';
+  $('sh').innerHTML = '<div class="sheetx">' + h + '<button class="btn" style="width:100%;margin-top:10px" onclick="tutup()">Tutup</button></div>';
+  $('ov').className = 'on'; busy = true;
+}
+function setFinal_(i, f) { CART[i].final = f; CART[i].d.items.forEach(function (it) { var el = $('pv' + i + '_' + it.kc); if (el) el.innerHTML = prevHtml_(it, CART[i].cnt[it.kc], f); }); }
+function setCnt_(el) {
+  var c = CART[+el.dataset.i], it = c.d.items.filter(function (x) { return x.kc === el.dataset.kc; })[0], p = it.parts.filter(function (x) { return x.key === el.dataset.k; })[0];
+  var v = Math.floor(Number(el.value)); if (!isFinite(v) || v < 0) v = 0; if (v > p.max) { v = p.max; el.value = v; }
+  c.cnt[it.kc][p.key] = el.value === '' ? 0 : v;
+  $('pv' + el.dataset.i + '_' + it.kc).innerHTML = prevHtml_(it, c.cnt[it.kc], c.final || !c.d.bolehSebagian);
+}
+function penuh_(i) { var c = CART[i]; c.d.items.forEach(function (it) { it.parts.forEach(function (p) { c.cnt[it.kc][p.key] = p.max; }); }); proses_(); }
+function hasilSheet_(judul, rows) {
+  var ok = rows.filter(function (r) { return r.ok; }).map(function (r) { return r.ids; });
+  CART = CART.filter(function (c) { return ok.indexOf(c.d.ids) < 0; }); drawCart();
+  $('sh').innerHTML = '<div class="sheetx"><div class="kp">' + esc(judul) + '</div>' + rows.map(function (r) {
+    return '<div class="kcbox">' + (r.ok ? '<b style="color:var(--ok)">✓ ' : '<b style="color:var(--bad)">✗ ') + esc(r.ids) + '</b>' + (r.ok ? (r.ke ? ' · kiriman ' + r.ke + ' · lembar ' + esc(r.lembar) + ' · ' + r.total + ' pcs' + (r.ulang ? ' (sudah tercatat)' : '') : (r.ulang ? ' sudah diterima' : ' diterima')) : '<div>' + esc(r.error) + '</div>') +
+      (r.hasil ? '<div class="pv">' + r.hasil.map(function (x) { return '<b>' + x.qty + '</b> ' + esc(x.nama); }).join(' + ') + '</div>' : '') +
+      (r.kurang && r.kurang.length ? '<div class="pv"><span class="k">Kurang: ' + r.kurang.map(function (x) { return x.qty + ' ' + esc(x.nama); }).join(', ') + '</span></div>' : '') +
+      (r.tanpaSku && r.tanpaSku.length ? '<div class="pv">Belum ada di Data Base Gudang: ' + r.tanpaSku.map(esc).join(', ') + '</div>' : '') + '</div>';
+  }).join('') + '<button class="btn pri" style="width:100%;margin-top:10px" onclick="tutup()">' + (CART.length ? 'Kembali ke keranjang' : 'Scan berikutnya') + '</button></div>';
+  $('ov').className = 'on';
+}
+function kirimTerima_() {
+  var ids = CART.filter(function (c) { return c.d.aksi === 'TERIMA'; }).map(function (c) { return c.d.ids; }); $('goT').disabled = true;
+  api('jterima', { token: ST.token, ids: ids }).then(function (r) { hasilSheet_('Terima barang', r.hasil); }).catch(function (e) { tampil(false, e.message, /Token|Sesi|masuk lagi/i.test(e.message)); });
+}
+function kirimSelesai_() {
+  var L = CART.filter(function (c) { return c.d.aksi === 'SELESAI'; }).map(function (c) { return { ids: c.d.ids, ref: c.ref, final: c.d.bolehSebagian ? c.final : true, hasil: c.cnt }; }); $('goS').disabled = true;
+  api('jselesai', { token: ST.token, list: L }).then(function (r) { hasilSheet_('Hasil jahit terkirim', r.hasil); }).catch(function (e) { tampil(false, e.message, /Token|Sesi|masuk lagi/i.test(e.message)); });
 }
 if (!window.__NOBOOT) boot();
 </script></body></html>

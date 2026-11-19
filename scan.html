@@ -10,7 +10,9 @@ header{background:var(--card);border-bottom:1px solid var(--line);padding:12px 1
 header small{display:block;font-size:11px;letter-spacing:.1em;color:var(--mut);font-weight:600}header b{font-size:18px}header .sp{flex:1}#who{color:var(--mut);font-size:13px;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 main{max-width:560px;margin:0 auto;padding:14px 16px 40px}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
 .cam{position:relative;border-radius:14px;overflow:hidden;background:#000;aspect-ratio:4/3}.cam video{width:100%;height:100%;object-fit:cover;display:block}
-.aim{position:absolute;left:8%;right:8%;top:32%;bottom:32%;border:3px solid rgba(255,255,255,.9);border-radius:10px;box-shadow:0 0 0 999px rgba(0,0,0,.35)}.aim::after{content:"";position:absolute;left:4%;right:4%;top:50%;height:2px;background:#ff5252;box-shadow:0 0 8px #ff5252}
+.aim{position:absolute;left:50%;top:50%;width:62%;aspect-ratio:1;transform:translate(-50%,-50%);border:3px solid rgba(255,255,255,.92);border-radius:14px;box-shadow:0 0 0 999px rgba(0,0,0,.32);pointer-events:none}
+.ctl{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 0}.chip{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:8px 14px;font:inherit;font-size:14px;font-weight:600;cursor:pointer}.chip.on{background:var(--pri);border-color:var(--pri);color:#fff}
+#fk{position:absolute;width:64px;height:64px;margin:-32px 0 0 -32px;border:2px solid #ffd54f;border-radius:50%;display:none;pointer-events:none}
 .hint{color:var(--mut);font-size:13px;margin:8px 2px 12px}.btn{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:13px 16px;font:inherit;font-weight:600;cursor:pointer}.btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}.btn:disabled{opacity:.5}
 .inp{width:100%;border:1px solid var(--line);border-radius:12px;padding:14px;font:inherit;font-size:18px;text-align:center;letter-spacing:.04em;background:var(--card);color:var(--ink)}
 .row{display:flex;gap:8px;margin-top:10px}.mut{color:var(--mut);font-size:13px}.kp{font-weight:700;font-size:17px}.q{font-size:44px;font-weight:800;line-height:1.1;margin:6px 0}
@@ -18,7 +20,7 @@ main{max-width:560px;margin:0 auto;padding:14px 16px 40px}.card{background:var(-
 .ok{width:64px;height:64px;border-radius:50%;background:var(--ok);color:#fff;display:grid;place-items:center;font-size:36px;margin:0 auto 10px}.bad b.t{color:var(--bad);font-size:18px}
 a.btn{display:block;text-decoration:none;text-align:center}.lbl{font-size:11px;letter-spacing:.08em;color:var(--mut);font-weight:600;text-transform:uppercase;margin:14px 2px 6px}
 </style></head><body>
-<header><div class="tile">P</div><div><small>PRODUKSI</small><b>Scan KC</b></div><span class="sp"></span><span id="who"></span></header>
+<header><div class="tile">P</div><div><small>PRODUKSI · QR v2</small><b>Scan KC</b></div><span class="sp"></span><span id="who"></span></header>
 <main id="main"></main>
 <div id="ov"><div class="sheet" id="sh"></div></div>
 <script>
@@ -28,7 +30,9 @@ a.btn{display:block;text-decoration:none;text-align:center}.lbl{font-size:11px;l
  *              membuka kamera sendiri, lalu memanggil Web App Produksi lewat fetch (doPost) dengan token sesi.
  * ALUR       : Produksi (layar Scan) -> "Scan dengan kamera" -> tiket sekali pakai di #hash -> halaman ini menukar tiket
  *              jadi token sesi (disimpan di browser, 12 jam) -> kamera membaca barcode Code128 KC -> cek -> konfirmasi -> selesai.
- * PEMBACA    : decoder Code128 buatan sendiri (tanpa pustaka luar, bekerja di semua browser); BarcodeDetector dipakai bila ada.
+ * PEMBACA    : QR (utama, label berisi link ?kc=KC-...) + Code128 (label lama). Pembaca buatan sendiri tanpa pustaka luar;
+ *              BarcodeDetector bawaan browser (Chrome Android) dipakai bersamaan bila ada.
+ * KAMERA     : resolusi 1080p, fokus otomatis, tombol zoom 1x/2x/3x & lampu (bila HP mendukung), ketuk layar untuk fokus.
  * PERAWATAN  : tidak ada konfigurasi di file ini. API & URL Login dibawa lewat tiket (#a=, #l=).
  * KEAMANAN   : doPost hanya melayani 3 aksi (tukar, cek, selesai); aturan "hanya worker terjadwal" tetap dijaga server.
  * ========================================================================== */
@@ -117,6 +121,260 @@ function dec_frame_(data, w, h, re) {
   return null;
 }
 /*DEC-END*/
+/*QRDEC-START*/
+/* ============================================================================
+ * Pembaca QR Code buatan sendiri (tanpa pustaka luar). Cadangan bila BarcodeDetector bawaan browser tidak ada.
+ * Mendukung: versi 1-10, koreksi L/M/Q/H, mode byte (dipakai label KC), mask 0-7, foto miring/perspektif ringan.
+ * Alur: keabuan -> biner (ambang adaptif per blok) -> cari 3 pola sudut (1:1:3:1:1) -> perkiraan versi ->
+ *       cari pola penjajar -> transformasi perspektif -> sampel modul -> format -> buka mask -> codeword ->
+ *       koreksi Reed-Solomon -> teks. Diuji dengan QR hasil encoder label (lurus, miring, perspektif, buram, rusak).
+ * ========================================================================== */
+var QD_EC = { // [ecPerBlok, [jumlahBlok, dataCodeword], ...] versi 1..10
+  L: [null, [7, [1, 19]], [10, [1, 34]], [15, [1, 55]], [20, [1, 80]], [26, [1, 108]], [18, [2, 68]], [20, [2, 78]], [24, [2, 97]], [30, [2, 116]], [18, [2, 68], [2, 69]]],
+  M: [null, [10, [1, 16]], [16, [1, 28]], [26, [1, 44]], [18, [2, 32]], [24, [2, 43]], [16, [4, 27]], [18, [4, 31]], [22, [2, 38], [2, 39]], [22, [3, 36], [2, 37]], [26, [4, 43], [1, 44]]],
+  Q: [null, [13, [1, 13]], [22, [1, 22]], [18, [2, 17]], [26, [2, 24]], [18, [2, 15], [2, 16]], [24, [4, 19]], [18, [2, 14], [4, 15]], [22, [4, 18], [2, 19]], [20, [4, 16], [4, 17]], [24, [6, 19], [2, 20]]],
+  H: [null, [17, [1, 9]], [28, [1, 16]], [22, [2, 13]], [16, [4, 9]], [22, [2, 11], [2, 12]], [28, [4, 15]], [26, [4, 13], [1, 14]], [26, [4, 14], [2, 15]], [24, [4, 12], [4, 13]], [28, [6, 15], [2, 16]]]
+};
+var QD_ALIGN = [null, [], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34], [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50]];
+var QD_GF = (function () { var e = [], l = [], x = 1, i; for (i = 0; i < 255; i++) { e[i] = x; l[x] = i; x <<= 1; if (x & 256) x ^= 0x11D; } for (i = 255; i < 512; i++) e[i] = e[i - 255]; return { exp: e, log: l }; })();
+function qd_mul_(a, b) { return a && b ? QD_GF.exp[QD_GF.log[a] + QD_GF.log[b]] : 0; }
+function qd_div_(a, b) { return a ? QD_GF.exp[(QD_GF.log[a] + 255 - QD_GF.log[b]) % 255] : 0; }
+
+/** Koreksi Reed-Solomon satu blok (akar generator a^0..a^(ec-1)). Mengembalikan codeword terkoreksi atau null. */
+function qd_rs_(cw, ec) {
+  var n = cw.length, S = [], any = false, j, k;
+  for (j = 0; j < ec; j++) { var s = 0, a = QD_GF.exp[j]; for (k = 0; k < n; k++) s = qd_mul_(s, a) ^ cw[k]; S[j] = s; if (s) any = true; }
+  if (!any) return cw.slice();
+  var C = [1], B = [1], L = 0, m = 1, b = 1, i;
+  for (i = 0; i < ec; i++) {
+    var d = S[i]; for (j = 1; j <= L; j++) d ^= qd_mul_(C[j] || 0, S[i - j]);
+    if (!d) { m++; continue; }
+    var coef = qd_div_(d, b), T = C.slice(), nl = Math.max(C.length, B.length + m);
+    for (j = 0; j < nl; j++) C[j] = (C[j] || 0) ^ (j - m >= 0 ? qd_mul_(coef, B[j - m] || 0) : 0);
+    if (2 * L <= i) { L = i + 1 - L; B = T; b = d; m = 1; } else m++;
+  }
+  var pos = [];
+  for (var e = 0; e < n; e++) { var inv = (255 - e) % 255, v = 0; for (j = 0; j < C.length; j++) v ^= qd_mul_(C[j] || 0, QD_GF.exp[(inv * j) % 255]); if (!v) pos.push(e); }
+  if (pos.length !== L || L * 2 > ec) return null;
+  var out = cw.slice();
+  pos.forEach(function (e) {
+    var Xi = QD_GF.exp[(255 - e) % 255], om = 0, dv = 0, p;
+    for (p = 0; p < ec; p++) { var c = 0; for (j = 0; j <= p; j++) c ^= qd_mul_(S[j], C[p - j] || 0); om ^= qd_mul_(c, QD_GF.exp[(QD_GF.log[Xi] * p) % 255]); } // Omega(X^-1)
+    for (j = 1; j < C.length; j += 2) dv ^= qd_mul_(C[j] || 0, QD_GF.exp[(QD_GF.log[Xi] * (j - 1)) % 255]); // Lambda'(X^-1)
+    if (!dv) { out = null; return; }
+    if (out) out[n - 1 - e] ^= qd_mul_(QD_GF.exp[e % 255], qd_div_(om, dv));
+  });
+  if (!out) return null;
+  for (j = 0; j < ec; j++) { var s2 = 0; for (k = 0; k < n; k++) s2 = qd_mul_(s2, QD_GF.exp[j]) ^ out[k]; if (s2) return null; } // pastikan benar-benar bersih
+  return out;
+}
+
+/** Peta modul fungsi (pola sudut, timing, penjajar, format, versi) untuk versi v. */
+function qd_fn_(v) {
+  var n = 17 + 4 * v, f = [], r, c, i;
+  for (r = 0; r < n; r++) { f[r] = []; for (c = 0; c < n; c++) f[r][c] = false; }
+  var set = function (x, y) { if (x >= 0 && y >= 0 && x < n && y < n) f[y][x] = true; };
+  [[0, 0], [n - 7, 0], [0, n - 7]].forEach(function (p) { for (var dy = -1; dy <= 7; dy++) for (var dx = -1; dx <= 7; dx++) set(p[0] + dx, p[1] + dy); });
+  for (i = 0; i < n; i++) { set(i, 6); set(6, i); }
+  var al = QD_ALIGN[v];
+  al.forEach(function (ay) { al.forEach(function (ax) {
+    if ((ay === 6 && ax === 6) || (ay === 6 && ax === al[al.length - 1]) || (ay === al[al.length - 1] && ax === 6)) return;
+    for (var dy = -2; dy <= 2; dy++) for (var dx = -2; dx <= 2; dx++) set(ax + dx, ay + dy);
+  }); });
+  for (i = 0; i < 9; i++) { set(8, i); set(i, 8); }
+  for (i = 0; i < 8; i++) { set(n - 1 - i, 8); set(8, n - 1 - i); }
+  if (v >= 7) for (i = 0; i < 18; i++) { set(n - 11 + (i % 3), Math.floor(i / 3)); set(Math.floor(i / 3), n - 11 + (i % 3)); }
+  return f;
+}
+var QD_MASK = [function (x, y) { return (x + y) % 2 === 0; }, function (x, y) { return y % 2 === 0; }, function (x, y) { return x % 3 === 0; }, function (x, y) { return (x + y) % 3 === 0; },
+  function (x, y) { return (Math.floor(x / 3) + Math.floor(y / 2)) % 2 === 0; }, function (x, y) { return (x * y) % 2 + (x * y) % 3 === 0; },
+  function (x, y) { return ((x * y) % 2 + (x * y) % 3) % 2 === 0; }, function (x, y) { return ((x + y) % 2 + (x * y) % 3) % 2 === 0; }];
+
+/** Matriks modul (m[y][x] = true gelap) -> teks, atau null. */
+function qd_matrix_(m) {
+  var n = m.length, v = (n - 17) / 4, i;
+  if (v < 1 || v > 10 || v !== Math.floor(v)) return null;
+  var g = function (x, y) { return m[y][x] ? 1 : 0; };
+  var r1 = [], r2 = [];
+  for (i = 0; i <= 5; i++) r1[i] = g(8, i); r1[6] = g(8, 7); r1[7] = g(8, 8); r1[8] = g(7, 8); for (i = 9; i < 15; i++) r1[i] = g(14 - i, 8);
+  for (i = 0; i < 8; i++) r2[i] = g(n - 1 - i, 8); for (i = 8; i < 15; i++) r2[i] = g(8, n - 15 + i);
+  var w1 = 0, w2 = 0; for (i = 0; i < 15; i++) { w1 |= r1[i] << i; w2 |= r2[i] << i; }
+  var best = -1, bd = 99;
+  for (var d = 0; d < 32; d++) {
+    var rem = d; for (i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >>> 9) * 0x537);
+    var code = ((d << 10) | rem) ^ 0x5412, h1 = 0, h2 = 0, x1 = code ^ w1, x2 = code ^ w2;
+    while (x1) { h1 += x1 & 1; x1 >>>= 1; } while (x2) { h2 += x2 & 1; x2 >>>= 1; }
+    var h = Math.min(h1, h2); if (h < bd) { bd = h; best = d; }
+  }
+  if (bd > 3) return null;
+  var ecl = ['M', 'L', 'H', 'Q'][best >> 3], mask = QD_MASK[best & 7], fn = qd_fn_(v), spec = QD_EC[ecl][v];
+  var blocks = []; for (var gi = 1; gi < spec.length; gi++) for (var k = 0; k < spec[gi][0]; k++) blocks.push(spec[gi][1]);
+  var ecPer = spec[0], total = blocks.reduce(function (s, x) { return s + x; }, 0) + ecPer * blocks.length, cw = [], bit = 0, cur = 0;
+  for (var right = n - 1; right >= 1; right -= 2) {
+    if (right === 6) right = 5;
+    for (var vert = 0; vert < n; vert++) for (var jj = 0; jj < 2; jj++) {
+      var x = right - jj, up = ((right + 1) & 2) === 0, y = up ? n - 1 - vert : vert;
+      if (fn[y][x] || cw.length >= total) continue;
+      cur = (cur << 1) | ((m[y][x] ? 1 : 0) ^ (mask(x, y) ? 1 : 0)); bit++;
+      if (bit === 8) { cw.push(cur); cur = 0; bit = 0; }
+    }
+  }
+  if (cw.length < total) return null;
+  var nb = blocks.length, maxD = Math.max.apply(null, blocks), dB = blocks.map(function () { return []; }), p = 0, bi;
+  for (i = 0; i < maxD; i++) for (bi = 0; bi < nb; bi++) if (i < blocks[bi]) dB[bi].push(cw[p++]);
+  for (i = 0; i < ecPer; i++) for (bi = 0; bi < nb; bi++) dB[bi].push(cw[p++]);
+  var data = [];
+  for (bi = 0; bi < nb; bi++) { var fx = qd_rs_(dB[bi], ecPer); if (!fx) return null; data = data.concat(fx.slice(0, blocks[bi])); }
+  // urai bit: hanya mode byte (4) yang dipakai label; mode lain -> null
+  var bp = 0, rd = function (cnt) { var val = 0; for (var q = 0; q < cnt; q++) { var by = data[(bp >> 3)]; if (by === undefined) return -1; val = (val << 1) | ((by >> (7 - (bp & 7))) & 1); bp++; } return val; };
+  var out = [];
+  while (bp + 4 <= data.length * 8) {
+    var mode = rd(4); if (mode === 0 || mode < 0) break;
+    if (mode !== 4) return null;
+    var len = rd(v < 10 ? 8 : 16); if (len < 0) return null;
+    for (i = 0; i < len; i++) { var c = rd(8); if (c < 0) return null; out.push(c); }
+  }
+  try { return decodeURIComponent(escape(String.fromCharCode.apply(null, out))); } catch (e) { return String.fromCharCode.apply(null, out); }
+}
+
+/** Gambar biner: 1 = gelap. Ambang adaptif per blok 8x8 (rata-rata 5x5 blok sekitar). */
+function qd_bin_(gray, w, h) {
+  var B = 8, bw = Math.ceil(w / B), bh = Math.ceil(h / B), avg = new Float32Array(bw * bh), bx, by, x, y;
+  for (by = 0; by < bh; by++) for (bx = 0; bx < bw; bx++) {
+    var s = 0, c = 0, mn = 255, mx = 0;
+    for (y = by * B; y < Math.min(h, by * B + B); y++) for (x = bx * B; x < Math.min(w, bx * B + B); x++) { var g = gray[y * w + x]; s += g; c++; if (g < mn) mn = g; if (g > mx) mx = g; }
+    avg[by * bw + bx] = mx - mn > 24 ? s / c : mn / 2; // blok datar: anggap terang (kecuali sangat gelap)
+  }
+  var thr = new Float32Array(bw * bh);
+  for (by = 0; by < bh; by++) for (bx = 0; bx < bw; bx++) {
+    var t = 0, k = 0;
+    for (var dy = -2; dy <= 2; dy++) for (var dx = -2; dx <= 2; dx++) { var yy = by + dy, xx = bx + dx; if (yy < 0 || xx < 0 || yy >= bh || xx >= bw) continue; t += avg[yy * bw + xx]; k++; }
+    thr[by * bw + bx] = t / k;
+  }
+  var bin = new Uint8Array(w * h);
+  for (y = 0; y < h; y++) for (x = 0; x < w; x++) bin[y * w + x] = gray[y * w + x] <= thr[((y / B) | 0) * bw + ((x / B) | 0)] ? 1 : 0;
+  return bin;
+}
+
+function qd_ratio_(r) { // 5 run gelap-terang-gelap-terang-gelap ~ 1:1:3:1:1 ?
+  var t = r[0] + r[1] + r[2] + r[3] + r[4]; if (t < 7) return 0;
+  var u = t / 7, mv = u / 1.6;
+  return Math.abs(u - r[0]) < mv && Math.abs(u - r[1]) < mv && Math.abs(3 * u - r[2]) < 3 * mv && Math.abs(u - r[3]) < mv && Math.abs(u - r[4]) < mv ? t : 0;
+}
+/** Hitung 5 run di sepanjang garis dari titik pusat ke dua arah (dx,dy). Mengembalikan {r, c} (c = geser pusat) atau null. */
+function qd_cross_(bin, w, h, cx, cy, dx, dy, maxRun) {
+  var at = function (k) { var x = Math.round(cx + dx * k), y = Math.round(cy + dy * k); return x < 0 || y < 0 || x >= w || y >= h ? -1 : bin[y * w + x]; };
+  if (at(0) !== 1) return null;
+  var r = [0, 0, 0, 0, 0], k = 0;
+  while (at(k) === 1 && r[2] <= maxRun) { r[2]++; k--; } var c0 = k;
+  while (at(k) === 0 && r[1] <= maxRun) { r[1]++; k--; }
+  while (at(k) === 1 && r[0] <= maxRun) { r[0]++; k--; }
+  k = 1; while (at(k) === 1 && r[2] <= maxRun * 3) { r[2]++; k++; } var c1 = k;
+  while (at(k) === 0 && r[3] <= maxRun) { r[3]++; k++; }
+  while (at(k) === 1 && r[4] <= maxRun) { r[4]++; k++; }
+  if (!qd_ratio_(r)) return null;
+  return { r: r, c: (c0 + c1) / 2 };
+}
+/** Cari kandidat pola sudut (finder): pindai baris, lalu periksa silang vertikal & horizontal. */
+function qd_finders_(bin, w, h) {
+  var cands = [], step = Math.max(1, Math.round(h / 400)), y, x, i;
+  for (y = 0; y < h; y += step) {
+    var row = y * w, ln = [], st = [], col = [], cur = bin[row], s0 = 0;
+    for (x = 1; x <= w; x++) { var d = x < w ? bin[row + x] : -1; if (d !== cur) { ln.push(x - s0); st.push(s0); col.push(cur); cur = d; s0 = x; } }
+    for (i = 0; i + 5 <= ln.length; i++) {
+      if (col[i] !== 1) continue;
+      var r = ln.slice(i, i + 5), tot = qd_ratio_(r); if (!tot) continue;
+      var cx = st[i + 2] + ln[i + 2] / 2 - 0.5, u = tot / 7;
+      var v1 = qd_cross_(bin, w, h, cx, y, 0, 1, u * 2.5); if (!v1) continue;
+      var cy = y + v1.c, tv = v1.r.reduce(function (s, q) { return s + q; }, 0); if (Math.abs(tv - tot) > tot * 0.6) continue;
+      var h1 = qd_cross_(bin, w, h, cx, cy, 1, 0, u * 2.5); if (!h1) continue;
+      var ccx = cx + h1.c, th = h1.r.reduce(function (s, q) { return s + q; }, 0), ms = (th + tv) / 14, hit = false;
+      for (var k = 0; k < cands.length; k++) { var q = cands[k]; if (Math.abs(q.x - ccx) <= ms * 2 && Math.abs(q.y - cy) <= ms * 2 && Math.abs(q.ms - ms) < ms * 0.6) { q.x = (q.x * q.n + ccx) / (q.n + 1); q.y = (q.y * q.n + cy) / (q.n + 1); q.ms = (q.ms * q.n + ms) / (q.n + 1); q.n++; hit = true; break; } }
+      if (!hit) cands.push({ x: ccx, y: cy, ms: ms, n: 1 });
+    }
+  }
+  return cands;
+}
+function qd_solve_(A, bv) { // eliminasi Gauss n x n
+  var n = bv.length, i, j, k;
+  for (i = 0; i < n; i++) {
+    var p = i; for (j = i + 1; j < n; j++) if (Math.abs(A[j][i]) > Math.abs(A[p][i])) p = j;
+    var t = A[i]; A[i] = A[p]; A[p] = t; t = bv[i]; bv[i] = bv[p]; bv[p] = t;
+    if (Math.abs(A[i][i]) < 1e-12) return null;
+    for (j = i + 1; j < n; j++) { var f = A[j][i] / A[i][i]; for (k = i; k < n; k++) A[j][k] -= f * A[i][k]; bv[j] -= f * bv[i]; }
+  }
+  var x = []; for (i = n - 1; i >= 0; i--) { var s = bv[i]; for (j = i + 1; j < n; j++) s -= A[i][j] * x[j]; x[i] = s / A[i][i]; }
+  return x;
+}
+/** Homografi dari 4 pasang titik (src modul -> dst piksel). */
+function qd_homo_(src, dst) {
+  var A = [], b = [];
+  for (var i = 0; i < 4; i++) {
+    var x = src[i][0], y = src[i][1], X = dst[i][0], Y = dst[i][1];
+    A.push([x, y, 1, 0, 0, 0, -x * X, -y * X]); b.push(X);
+    A.push([0, 0, 0, x, y, 1, -x * Y, -y * Y]); b.push(Y);
+  }
+  var hh = qd_solve_(A, b); if (!hh) return null;
+  return function (x, y) { var z = hh[6] * x + hh[7] * y + 1; return [(hh[0] * x + hh[1] * y + hh[2]) / z, (hh[3] * x + hh[4] * y + hh[5]) / z]; };
+}
+/** Cari pusat pola penjajar di sekitar (ex,ey). */
+function qd_align_(bin, w, h, ex, ey, ms) {
+  var R = Math.round(ms * 4), best = null, bs = 0, bd = 1e9;
+  var at = function (x, y) { x = Math.round(x); y = Math.round(y); return x < 0 || y < 0 || x >= w || y >= h ? -1 : bin[y * w + x]; };
+  var dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7071, 0.7071], [-0.7071, 0.7071], [0.7071, -0.7071], [-0.7071, -0.7071]];
+  for (var y = Math.round(ey - R); y <= ey + R; y++) for (var x = Math.round(ex - R); x <= ex + R; x++) {
+    if (at(x, y) !== 1) continue;
+    var s = 1; for (var i = 0; i < 8; i++) { var sc = i < 4 ? 1 : 1.414; if (at(x + dirs[i][0] * ms * sc, y + dirs[i][1] * ms * sc) === 0) s++; if (at(x + dirs[i][0] * ms * 2 * sc, y + dirs[i][1] * ms * 2 * sc) === 1) s++; }
+    var dd = (x - ex) * (x - ex) + (y - ey) * (y - ey);
+    if (s > bs || (s === bs && dd < bd)) { bs = s; bd = dd; best = [x, y]; }
+  }
+  return bs >= 15 ? best : null;
+}
+/** Coba baca dari tiga titik pusat finder (tl, tr, bl) dengan dimensi n. */
+function qd_try_(bin, w, h, tl, tr, bl, ms, n) {
+  var v = (n - 17) / 4, br = null;
+  if (v >= 2) {
+    var k = (n - 10) / (n - 7), ex = tl.x + (tr.x - tl.x) * k + (bl.x - tl.x) * k, ey = tl.y + (tr.y - tl.y) * k + (bl.y - tl.y) * k;
+    var a = qd_align_(bin, w, h, ex, ey, ms); if (a) br = [[n - 6.5, n - 6.5], a];
+  }
+  if (!br) br = [[n - 3.5, n - 3.5], [tr.x + bl.x - tl.x, tr.y + bl.y - tl.y]];
+  var H = qd_homo_([[3.5, 3.5], [n - 3.5, 3.5], [3.5, n - 3.5], br[0]], [[tl.x, tl.y], [tr.x, tr.y], [bl.x, bl.y], br[1]]);
+  if (!H) return null;
+  var m = [], out = 0;
+  for (var y = 0; y < n; y++) { m[y] = []; for (var x = 0; x < n; x++) { var p = H(x + 0.5, y + 0.5), px = Math.round(p[0]), py = Math.round(p[1]); if (px < 0 || py < 0 || px >= w || py >= h) { out++; m[y][x] = false; } else m[y][x] = bin[py * w + px] === 1; } }
+  if (out > n) return null;
+  return qd_matrix_(m);
+}
+/** Cari & baca QR di gambar keabuan (Float32/Uint8, lebar w, tinggi h). Teks atau null. */
+function qd_decode_(gray, w, h) {
+  var bin = qd_bin_(gray, w, h), c = qd_finders_(bin, w, h);
+  if (c.length < 3) return null;
+  c.sort(function (a, b) { return b.n - a.n; }); c = c.slice(0, 8);
+  var tri = [];
+  for (var i = 0; i < c.length; i++) for (var j = i + 1; j < c.length; j++) for (var k = j + 1; k < c.length; k++) {
+    var P = [c[i], c[j], c[k]], mss = P.map(function (p) { return p.ms; }), mmax = Math.max.apply(null, mss), mmin = Math.min.apply(null, mss);
+    if (mmax > mmin * 1.6) continue;
+    var d = function (a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }, s = [d(P[1], P[2]), d(P[0], P[2]), d(P[0], P[1])], hi = s.indexOf(Math.max.apply(null, s));
+    var tl = P[hi], o = P.filter(function (_, q) { return q !== hi; }), l1 = s[(hi + 1) % 3], l2 = s[(hi + 2) % 3];
+    if (Math.abs(l1 - l2) > Math.max(l1, l2) * 0.35) continue;
+    var hyp = s[hi], err = Math.abs(hyp * hyp - l1 * l1 - l2 * l2) / (hyp * hyp); if (err > 0.35) continue;
+    var tr = o[0], bl = o[1]; if ((tr.x - tl.x) * (bl.y - tl.y) - (tr.y - tl.y) * (bl.x - tl.x) < 0) { tr = o[1]; bl = o[0]; }
+    tri.push({ tl: tl, tr: tr, bl: bl, ms: (mmax + mmin) / 2, sc: err + Math.abs(l1 - l2) / Math.max(l1, l2) - (P[0].n + P[1].n + P[2].n) * 0.01 });
+  }
+  tri.sort(function (a, b) { return a.sc - b.sc; });
+  for (var t = 0; t < Math.min(3, tri.length); t++) {
+    var T = tri[t], dA = Math.hypot(T.tr.x - T.tl.x, T.tr.y - T.tl.y), dB = Math.hypot(T.bl.x - T.tl.x, T.bl.y - T.tl.y);
+    // ukuran modul diukur searah sisi QR (bukan horizontal), supaya QR yang diputar 45 derajat tetap benar
+    var mu = [], dir = [[(T.tr.x - T.tl.x) / dA, (T.tr.y - T.tl.y) / dA], [(T.bl.x - T.tl.x) / dB, (T.bl.y - T.tl.y) / dB]];
+    [T.tl, T.tr, T.bl].forEach(function (P) { dir.forEach(function (u) { var cr = qd_cross_(bin, w, h, P.x, P.y, u[0], u[1], T.ms * 3); if (cr) mu.push((cr.r[0] + cr.r[1] + cr.r[2] + cr.r[3] + cr.r[4]) / 7); }); });
+    var mod = mu.length ? mu.reduce(function (s, x) { return s + x; }, 0) / mu.length : T.ms;
+    var n0 = Math.round(((dA + dB) / 2 / mod + 7 - 17) / 4) * 4 + 17;
+    var tries = [n0, n0 + 4, n0 - 4];
+    for (var q = 0; q < tries.length; q++) { if (tries[q] < 21 || tries[q] > 57) continue; var r = qd_try_(bin, w, h, T.tl, T.tr, T.bl, mod, tries[q]); if (r !== null) return r; }
+  }
+  return null;
+}
+/*QRDEC-END*/
 var KC_RE = /^KC-\d{6}-\d{3,}$/, KEY = 'prodScan', ST = null, busy = false, last = { kc: '', t: 0 }, stream = null, timer = 0, bd = null, recent = [];
 var $ = function (id) { return document.getElementById(id); };
 var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
@@ -146,29 +404,65 @@ function gagal(msg) {
 }
 function mulai() {
   $('who').textContent = (ST.nama || '') + (ST.email ? ' · ' + ST.email : '');
-  $('main').innerHTML = '<div class="cam"><video id="v" playsinline muted autoplay></video><div class="aim"></div></div><div class="hint">Arahkan ke barcode di label, isi kotak putih. Kalau gelap, dekatkan ke cahaya.</div>' +
+  $('main').innerHTML = '<div class="cam" id="cam"><video id="v" playsinline muted autoplay></video><div class="aim"></div><div id="fk"></div></div><div class="ctl" id="ctl"></div>' +
+    '<div class="hint" id="hint">Arahkan ke QR di label sampai masuk kotak. Jarak ±15–20 cm; kalau buram, pakai zoom 2× lalu jauhkan HP sedikit, atau ketuk layar untuk fokus.</div>' +
     '<div class="card"><input class="inp" id="man" placeholder="Atau ketik kode KC" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key===\'Enter\')manual()"><div class="row"><button class="btn pri" style="flex:1" onclick="manual()">Cek KC</button></div></div><div id="rc"></div>';
   rc(); kamera();
 }
 function rc() { $('rc').innerHTML = recent.length ? '<div class="lbl">Selesai sesi ini</div>' + recent.map(function (r) { return '<div class="card" style="padding:12px"><b>' + esc(r.kc) + '</b> <span class="mut">· ' + esc(r.jam) + '</span><div class="mut">' + esc(r.nama) + ' · ' + r.qty + ' pcs</div></div>'; }).join('') : ''; }
+/** Ambil kode dari hasil pindai: QR label berisi link ...?kc=KC-..., barcode garis berisi KC langsung. */
+function kode_(txt) { var m = /KC-\d{6}-\d{3,}/i.exec(String(txt || '')); return m ? m[0].toUpperCase() : ''; }
+var track = null, cap = {};
 function kamera() {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('main').querySelector('.hint').textContent = 'Kamera tidak tersedia di browser ini. Ketik kode KC di bawah.'; return; }
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }).then(function (s) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('hint').textContent = 'Kamera tidak tersedia di browser ini. Ketik kode KC di bawah.'; return; }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }).then(function (s) {
     stream = s; var v = $('v'); v.srcObject = s; v.play();
-    try { var tr = s.getVideoTracks()[0], cap = tr.getCapabilities ? tr.getCapabilities() : {}; if (cap.focusMode && cap.focusMode.indexOf('continuous') >= 0) tr.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
-    try { if ('BarcodeDetector' in window) bd = new BarcodeDetector({ formats: ['code_128'] }); } catch (e) {}
-    timer = setInterval(tick, 140);
-  }).catch(function (e) { $('main').querySelector('.hint').innerHTML = 'Kamera tidak bisa dibuka (' + esc((e && e.name) || e) + '). Izinkan akses kamera di pengaturan situs, lalu muat ulang. Sementara, ketik kode KC di bawah.'; });
+    track = s.getVideoTracks()[0]; try { cap = track.getCapabilities ? track.getCapabilities() : {}; } catch (e) { cap = {}; }
+    atur_({ focusMode: 'continuous' }, cap.focusMode && cap.focusMode.indexOf('continuous') >= 0);
+    kontrol_();
+    $('cam').onclick = fokus_;
+    try {
+      if ('BarcodeDetector' in window) BarcodeDetector.getSupportedFormats().then(function (f) { var w = ['qr_code', 'code_128'].filter(function (x) { return f.indexOf(x) >= 0; }); if (w.length) bd = new BarcodeDetector({ formats: w }); }).catch(function () {});
+    } catch (e) {}
+    timer = setInterval(tick, 160);
+  }).catch(function (e) { $('hint').innerHTML = 'Kamera tidak bisa dibuka (' + esc((e && e.name) || e) + '). Izinkan akses kamera di pengaturan situs, lalu muat ulang. Sementara, ketik kode KC di bawah.'; });
 }
-var cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
+function atur_(c, boleh) { if (!track || !boleh) return Promise.resolve(); try { return track.applyConstraints({ advanced: [c] }).catch(function () {}); } catch (e) { return Promise.resolve(); } }
+/** Tombol zoom (bila kamera mendukung) & lampu. Zoom 2x membantu label kecil: HP bisa agak jauh sehingga fokus tajam. */
+var zoomNow = 1, lampu = false;
+function kontrol_() {
+  var html = '', z = cap.zoom;
+  if (z && z.max >= 1.5) {
+    var opts = [1, 2, 3].filter(function (x) { return x >= (z.min || 1) && x <= z.max; });
+    zoomNow = opts.indexOf(2) >= 0 ? 2 : 1;
+    html += opts.map(function (x) { return '<button class="chip' + (x === zoomNow ? ' on' : '') + '" onclick="zoom_(' + x + ')">' + x + '×</button>'; }).join('');
+    atur_({ zoom: zoomNow }, true);
+  }
+  if (cap.torch) html += '<button class="chip" id="lp" onclick="lampu_()">Lampu</button>';
+  $('ctl').innerHTML = html;
+}
+function zoom_(x) { zoomNow = x; atur_({ zoom: x }, true); Array.prototype.forEach.call($('ctl').querySelectorAll('.chip'), function (b) { if (/×$/.test(b.textContent)) b.className = 'chip' + (b.textContent === x + '×' ? ' on' : ''); }); }
+function lampu_() { lampu = !lampu; atur_({ torch: lampu }, true); $('lp').className = 'chip' + (lampu ? ' on' : ''); }
+function fokus_(ev) { // ketuk layar: fokus ulang di titik itu (bila didukung), lalu kembali ke fokus otomatis
+  var r = $('cam').getBoundingClientRect(), x = (ev.clientX - r.left) / r.width, y = (ev.clientY - r.top) / r.height, f = $('fk');
+  f.style.left = (x * 100) + '%'; f.style.top = (y * 100) + '%'; f.style.display = 'block'; setTimeout(function () { f.style.display = 'none'; }, 700);
+  var fm = cap.focusMode || [];
+  if (fm.indexOf('single-shot') >= 0) atur_({ focusMode: 'single-shot', pointsOfInterest: [{ x: x, y: y }] }, true).then(function () { setTimeout(function () { atur_({ focusMode: 'continuous' }, fm.indexOf('continuous') >= 0); }, 1500); });
+  else if (fm.indexOf('continuous') >= 0) atur_({ focusMode: 'continuous', pointsOfInterest: [{ x: x, y: y }] }, true);
+}
+var cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true }), bdBusy = false;
 function tick() {
   var v = $('v'); if (busy || !v || v.readyState < 2 || !v.videoWidth) return;
-  var w = Math.min(1280, v.videoWidth), h = Math.round(w * v.videoHeight / v.videoWidth), bh = Math.round(h * 0.6), by = Math.round((h - bh) / 2);
-  cv.width = w; cv.height = bh; cx.drawImage(v, 0, by * v.videoHeight / h, v.videoWidth, bh * v.videoHeight / h, 0, 0, w, bh);
-  var done = function (kc) { if (kc && KC_RE.test(kc)) { var n = Date.now(); if (kc === last.kc && n - last.t < 2500) return; hasil(kc); } };
-  var t = null; try { t = dec_frame_(cx.getImageData(0, 0, w, bh).data, w, bh, KC_RE); } catch (e) {}
-  if (t) { done(t); return; }
-  if (bd) bd.detect(cv).then(function (r) { if (r && r.length) done(String(r[0].rawValue || '').trim().toUpperCase()); }).catch(function () {});
+  var w = Math.min(960, v.videoWidth), h = Math.round(w * v.videoHeight / v.videoWidth);
+  cv.width = w; cv.height = h; cx.drawImage(v, 0, 0, w, h);
+  var done = function (txt) { var kc = kode_(txt); if (!kc || busy) return; var n = Date.now(); if (kc === last.kc && n - last.t < 2500) return; hasil(kc); };
+  if (bd && !bdBusy) { bdBusy = true; bd.detect(cv).then(function (r) { bdBusy = false; if (r && r.length) done(r[0].rawValue); }).catch(function () { bdBusy = false; }); }
+  try {
+    var d = cx.getImageData(0, 0, w, h).data, g = new Float32Array(w * h);
+    for (var i = 0; i < g.length; i++) g[i] = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114;
+    var t = qd_decode_(g, w, h); if (t && kode_(t)) { done(t); return; }
+    t = dec_frame_(d, w, h, KC_RE); if (t) done(t); // barcode garis (label lama) tetap terbaca
+  } catch (e) {}
 }
 function manual() { var v = ($('man').value || '').trim().toUpperCase(); if (!KC_RE.test(v)) { toast('Bukan kode KC'); return; } $('man').value = ''; hasil(v); }
 function toast(m) { var s = $('sh'); s.innerHTML = '<div class="bad"><b class="t">' + esc(m) + '</b></div>'; $('ov').className = 'on'; setTimeout(function () { if (!busy) $('ov').className = ''; }, 1400); }

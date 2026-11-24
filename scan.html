@@ -29,7 +29,7 @@ a.btn{display:block;text-decoration:none;text-align:center}.lbl{font-size:11px;l
 .pv{font-size:13px;margin-top:6px;color:var(--mut)}.pv b{color:var(--ink)}.pv .k{color:var(--bad)}
 .opt{display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid var(--line);border-radius:10px;margin-top:6px;font-size:14px}
 </style></head><body>
-<header><div class="tile"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5v14M3 15h18v4M11 15v-4.5h6.5A3.5 3.5 0 0 1 21 14v1"/><rect x="5.2" y="11" width="4.4" height="3" rx="1.2"/></svg></div><div><small>PRODUKSI · QR v10</small><b>Scan KC</b></div><span class="sp"></span><span id="who"></span></header>
+<header><div class="tile"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5v14M3 15h18v4M11 15v-4.5h6.5A3.5 3.5 0 0 1 21 14v1"/><rect x="5.2" y="11" width="4.4" height="3" rx="1.2"/></svg></div><div><small>PRODUKSI · QR v11</small><b>Scan KC</b></div><span class="sp"></span><span id="who"></span></header>
 <main id="main"></main>
 <div id="ov"><div class="sheet" id="sh"></div></div>
 <script>
@@ -865,7 +865,8 @@ function gpoCek(kode) {
 }
 function gpoForm_() {
   var d = GP.d, p = d.penyesuaian, warna = p.status === 'BELUM_DILENGKAPI' ? 'var(--bad)' : 'var(--ok)';
-  $('sh').innerHTML = '<div class="sheetx"><div class="mut" style="letter-spacing:.08em;font-weight:600">TERIMA PO DI GUDANG</div><div class="kp" style="margin-top:4px">' + esc(d.identitas) + '</div>' +
+  $('sh').innerHTML = '<div class="sheetx"><div class="mut" style="letter-spacing:.08em;font-weight:600">TERIMA PO DI GUDANG</div><div class="kp" style="margin-top:4px">' + esc(d.identitas) + (/URGENT/.test(d.kategori || '') ? ' <span class="tag" style="background:#c62828;color:#fff">URGENT</span>' : /PELENGKAP/.test(d.kategori || '') ? ' <span class="tag" style="background:#7b5bd6;color:#fff">PELENGKAP</span>' : '') + '</div>' +
+    (d.reseller ? '<div class="mut">Reseller <b>' + esc(d.reseller) + '</b>' + (d.refAsal ? ' · No PO ' + esc(d.refAsal) : '') + '</div>' : '') +
     '<div class="mut">' + esc(d.mkl) + ' · ' + esc(d.jenis) + ' · ' + esc(d.nama) + ' (' + esc(d.tujuan) + ') · ' + d.pcs + ' pcs' + (d.deadline ? ' · deadline ' + esc(d.hariDeadline) + ' ' + esc(String(d.deadline).slice(5)) : '') + '</div>' +
     '<div class="kcbox" style="border:2px solid ' + warna + ';margin-top:10px"><b style="color:' + warna + ';font-size:16px">' + esc(p.label) + '</b>' +
       (p.status === 'BELUM_DILENGKAPI' ? '<div class="pv"><span class="k">' + p.sisa + ' pcs kurang/cacat belum diganti' + (d.kelompok === 'LUAR' ? ' (penjahit luar)' : '') + '. Lapor admin untuk PO Urgent.</span></div>' : '') +

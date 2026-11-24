@@ -863,6 +863,15 @@ function gpoCek(kode) {
   api('gcek', { token: ST.token, kode: kode }).then(function (d) { GP = { d: d, ref: newRef_() }; gpoForm_(); })
     .catch(function (e) { last.t = Date.now(); tampil(false, e.message, /Token|Sesi|masuk lagi/i.test(e.message)); });
 }
+/** Kekurangan yang belum diganti di Produksi: sudah dibuatkan PO urgent / pelengkap (Ref Kurang) atau belum. */
+function urgHtml_(u) {
+  if (!u || !u.length) return '';
+  var semua = u.every(function (x) { return x.po.length && x.qtyUrgent >= x.sisa; });
+  return '<div class="pv" style="margin-top:6px"><b style="color:' + (semua ? 'var(--ok)' : 'var(--bad)') + '">' + (semua ? 'Semua kekurangan sudah diurgent' : 'Kekurangan belum diganti') + '</b></div>' + u.map(function (x) {
+    var ok = x.po.length > 0;
+    return '<div class="pv"><span class="k">' + (x.asal === 'CACAT' ? 'Cacat ' : 'Kurang ') + x.sisa + ' ' + esc(x.nama) + '</span> — <b style="color:' + (ok ? 'var(--ok)' : 'var(--bad)') + '">' + (ok ? 'Sudah diurgent (' + esc(x.po.join(', ')) + ')' + (x.qtyUrgent < x.sisa ? ' · baru ' + x.qtyUrgent : '') : 'Belum diganti') + '</b></div>';
+  }).join('');
+}
 function gpoForm_() {
   var d = GP.d, p = d.penyesuaian, warna = p.status === 'BELUM_DILENGKAPI' ? 'var(--bad)' : 'var(--ok)';
   $('sh').innerHTML = '<div class="sheetx"><div class="mut" style="letter-spacing:.08em;font-weight:600">TERIMA PO DI GUDANG</div><div class="kp" style="margin-top:4px">' + esc(d.identitas) + (/URGENT/.test(d.kategori || '') ? ' <span class="tag" style="background:#c62828;color:#fff">URGENT</span>' : /PELENGKAP/.test(d.kategori || '') ? ' <span class="tag" style="background:#7b5bd6;color:#fff">PELENGKAP</span>' : '') + '</div>' +
@@ -870,7 +879,7 @@ function gpoForm_() {
     '<div class="mut">' + esc(d.mkl) + ' · ' + esc(d.jenis) + ' · ' + esc(d.nama) + ' (' + esc(d.tujuan) + ') · ' + d.pcs + ' pcs' + (d.deadline ? ' · deadline ' + esc(d.hariDeadline) + ' ' + esc(String(d.deadline).slice(5)) : '') + '</div>' +
     '<div class="kcbox" style="border:2px solid ' + warna + ';margin-top:10px"><b style="color:' + warna + ';font-size:16px">' + esc(p.label) + '</b>' +
       (p.status === 'BELUM_DILENGKAPI' ? '<div class="pv"><span class="k">' + p.sisa + ' pcs kurang/cacat belum diganti' + (d.kelompok === 'LUAR' ? ' (penjahit luar)' : '') + '. Lapor admin untuk PO Urgent.</span></div>' : '') +
-      '<div class="pv">Update selesai: <b>' + esc(d.kelengkapan || '-') + '</b>' + (d.selesaiOleh ? ' oleh ' + esc(d.selesaiOleh) : '') + '</div></div>' +
+      '<div class="pv">Update selesai: <b>' + esc(d.kelengkapan || '-') + '</b>' + (d.selesaiOleh ? ' oleh ' + esc(d.selesaiOleh) : '') + '</div>' + urgHtml_(d.urgent) + '</div>' +
     d.baris.map(function (b) {
       return '<div class="kcbox"><div style="word-break:break-word"><b>No ' + b.noJht + ' · ' + esc(b.nama) + '</b>' + (b.custom ? ' <span class="tag s">CUSTOM</span>' : '') + '</div><div class="mut" style="font-size:12px">' + esc(b.sku) + ' · pesanan <b>' + b.qty + '</b></div>' +
         '<div class="pv">' + (b.barang.map(function (x) { return '<b>' + x.qty + '</b> ' + esc(x.nama) + (GJ_[x.jenis] ? ' <span class="' + (x.jenis === 'CACAT' ? 'k' : '') + '">(' + GJ_[x.jenis] + ')</span>' : ''); }).join(' + ') || '<span class="k">Tidak ada barang</span>') + '</div>' +
